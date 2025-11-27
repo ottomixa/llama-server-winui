@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "llama-server-winui (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "llama-server-winui (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
