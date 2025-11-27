@@ -34,6 +34,11 @@ namespace llama_server_winui
         [ObservableProperty]
         private string _statusMessage;
 
+        [ObservableProperty]
+        private bool _isServerRunning;
+
+        private Process _serverProcess;
+
         // The direct download link from GitHub Releases
         public string DownloadUrl { get; set; }
 
@@ -92,11 +97,29 @@ namespace llama_server_winui
                     UseShellExecute = true,
                     CreateNoWindow = false
                 };
-                Process.Start(psi);
+                _serverProcess = Process.Start(psi);
+                if (_serverProcess != null)
+                {
+                    IsServerRunning = true;
+                    StatusMessage = "Server is running...";
+                }
             }
             else
             {
                 StatusMessage = "Executable not found!";
+            }
+        }
+
+        // Action: Stop the server
+        [RelayCommand]
+        public void StopServer()
+        {
+            if (_serverProcess != null && !_serverProcess.HasExited)
+            {
+                _serverProcess.Kill();
+                _serverProcess = null;
+                IsServerRunning = false;
+                StatusMessage = "Server stopped.";
             }
         }
 
