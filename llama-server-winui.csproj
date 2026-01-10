@@ -24,6 +24,18 @@
     <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="llama-server-winui.Core\**" />
+    <Compile Remove="llama-server-winui.Tests\**" />
+    <EmbeddedResource Remove="llama-server-winui.Core\**" />
+    <EmbeddedResource Remove="llama-server-winui.Tests\**" />
+    <None Remove="llama-server-winui.Core\**" />
+    <None Remove="llama-server-winui.Tests\**" />
+    <Page Remove="llama-server-winui.Core\**" />
+    <Page Remove="llama-server-winui.Tests\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -68,5 +80,9 @@
     <Compile Update="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+
   </ItemGroup>
 </Project>

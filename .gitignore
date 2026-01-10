@@ -5,3 +5,5 @@
 /bin
 /.vs
 /obj
+llama-server-winui.Tests/bin/
+llama-server-winui.Tests/obj/
