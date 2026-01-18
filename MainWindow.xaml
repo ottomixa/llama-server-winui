@@ -5,7 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:local="using:llama_server_winui"
-    mc:Ignorable="d"
+    mc:Ignorable="d"    
     Title="Llama Server WinUI">
 
     <Grid Background="#F3F3F3">
@@ -41,6 +41,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -48,7 +49,7 @@
                             </Grid.ColumnDefinitions>
 
                             <!-- Header Row -->
-                            <StackPanel Orientation="Horizontal" Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="10" Grid.Column="0">
                                 <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" FontSize="16"/>
 
                                 <Border Background="#F0F0F0" CornerRadius="4" Padding="5,2">
@@ -65,19 +66,31 @@
                             </Border>
 
                             <!-- Description Row -->
-                            <TextBlock Grid.Row="1" Text="{x:Bind Description}" Foreground="#666" Margin="0,5,0,10"/>
+                            <TextBlock Grid.Row="1" Text="{x:Bind Description}" Foreground="#666" Margin="0,5,0,10" Grid.ColumnSpan="2"/>
+
+                            <!-- Model Selection Row -->
+                            <StackPanel Grid.Row="2" Orientation="Vertical" Margin="0,0,0,10" Grid.ColumnSpan="2">
+                                <TextBlock Text="Model File (.gguf)" FontSize="12" Foreground="#666" Margin="0,0,0,4"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{x:Bind ModelPath, Mode=OneWay}" IsReadOnly="True" PlaceholderText="Select a model..." Margin="0,0,10,0"/>
+                                    <Button Grid.Column="1" Content="..." Click="PickModel_Click" ToolTipService.ToolTip="Select Model"/>
+                                </Grid>
+                            </StackPanel>
 
                             <!-- Progress Bar (visible during download) -->
-                            <ProgressBar Grid.Row="2" Grid.ColumnSpan="2" 
+                            <ProgressBar Grid.Row="3" Grid.ColumnSpan="2" 
                                          Value="{x:Bind DownloadProgress, Mode=OneWay}" 
                                          Maximum="100"
                                          Visibility="{x:Bind IsDownloading, Mode=OneWay}"
                                          Margin="0,0,0,10"
-                                         Height="6"
-                                         CornerRadius="3"/>
+                                         Height="6"/>
 
                             <!-- Footer Row -->
-                            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="15" VerticalAlignment="Center">
+                            <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="15" VerticalAlignment="Center" Grid.ColumnSpan="1">
                                 <HyperlinkButton NavigateUri="{x:Bind ReleaseNotesUrl}">
                                     <StackPanel Orientation="Horizontal" Spacing="5">
                                         <TextBlock Text="Release Notes"/>
@@ -87,8 +100,10 @@
                                 <TextBlock Text="{x:Bind StatusMessage, Mode=OneWay}" VerticalAlignment="Center" Foreground="Orange" FontWeight="Medium"/>
                             </StackPanel>
 
-                            <!-- Action Buttons -->
-                            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                            <!-- Action Buttons (right column) -->
+                            <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                                <TextBlock Text="{x:Bind ValidationMessage, Mode=OneWay}" VerticalAlignment="Center" Foreground="Red" FontSize="12" Margin="0,0,10,0"/>
+
                                 <ProgressRing IsActive="{x:Bind IsDownloading, Mode=OneWay}" 
                                               Visibility="{x:Bind IsDownloading, Mode=OneWay}" 
                                               Width="25" Height="25"/>
@@ -124,12 +139,98 @@
                                 </Button>
                             </StackPanel>
 
+                            <!-- Installation Details Section (visible when installed) -->
+                            <Border Grid.Row="5" Grid.ColumnSpan="2" 
+                                    Background="#F8F9FA" 
+                                    CornerRadius="6" 
+                                    Padding="12" 
+                                    Margin="0,10,0,0"
+                                    Visibility="{x:Bind IsInstalled, Mode=OneWay}"
+                                    BorderBrush="#E0E0E0"
+                                    BorderThickness="1">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE946;" FontSize="14" Foreground="#666"/>
+                                        <TextBlock Text="Installation Details" FontWeight="SemiBold" FontSize="13" Foreground="#333"/>
+                                    </StackPanel>
+                                    
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="140"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
 
+                                        <!-- Zip Download Path -->
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Zip Downloaded To:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="0,2"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" 
+                                                   Text="{x:Bind ZipDownloadPath, Mode=OneWay}" 
+                                                   FontSize="12" Foreground="#333" 
+                                                   TextWrapping="Wrap" Margin="0,2"
+                                                   IsTextSelectionEnabled="True"/>
+
+                                        <!-- Extracted Folder Path -->
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Extracted To:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="0,2"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" 
+                                                   Text="{x:Bind ExtractedFolderPath, Mode=OneWay}" 
+                                                   FontSize="12" Foreground="#333" 
+                                                   TextWrapping="Wrap" Margin="0,2"
+                                                   IsTextSelectionEnabled="True"/>
+
+                                        <!-- llama-server.exe Status -->
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="llama-server.exe:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="0,2"/>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="0,2">
+                                            <FontIcon Glyph="{x:Bind LlamaServerExeStatusIcon(IsLlamaServerExePresent), Mode=OneWay}" 
+                                                      FontSize="12"
+                                                      Foreground="{x:Bind LlamaServerExeStatusColor(IsLlamaServerExePresent), Mode=OneWay}"/>
+                                            <TextBlock Text="{x:Bind LlamaServerExeStatusText(IsLlamaServerExePresent), Mode=OneWay}" 
+                                                       FontSize="12" 
+                                                       Foreground="{x:Bind LlamaServerExeStatusColor(IsLlamaServerExePresent), Mode=OneWay}"/>
+                                            <TextBlock Text="{x:Bind LlamaServerExePath, Mode=OneWay}" 
+                                                       FontSize="11" Foreground="#888" 
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="400"
+                                                       ToolTipService.ToolTip="{x:Bind LlamaServerExePath, Mode=OneWay}"
+                                                       Visibility="{x:Bind IsLlamaServerExePresent, Mode=OneWay}"
+                                                       IsTextSelectionEnabled="True"/>
+                                        </StackPanel>
+
+                                        <!-- llama-server.exe Version -->
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Version Output:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Top" Margin="0,2"/>
+                                        <Border Grid.Row="3" Grid.Column="1" 
+                                                Background="#EEEEEE" CornerRadius="4" Padding="8,4" Margin="0,2"
+                                                Visibility="{x:Bind IsLlamaServerExePresent, Mode=OneWay}">
+                                            <TextBlock Text="{x:Bind LlamaServerVersion, Mode=OneWay}" 
+                                                       FontSize="11" FontFamily="Consolas"
+                                                       Foreground="#333" 
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True"/>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
 
                         </Grid>
                     </Border>
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
+        <!-- Loading Overlay -->
+        <Grid Grid.Row="0" Grid.RowSpan="2" Background="#80FFFFFF" 
+              Visibility="{x:Bind BoolToVisibility(IsLoading), Mode=OneWay}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="15">
+                <ProgressRing IsActive="True" Width="50" Height="50"/>
+                <TextBlock Text="Checking for latest version..." FontSize="16" FontWeight="SemiBold" Foreground="#333"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

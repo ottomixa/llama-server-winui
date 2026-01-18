@@ -100,6 +100,46 @@ The main UI implementing a card-based layout with:
 
 ---
 
+## Compilation Instructions
+
+To compile the llama-server, follow these steps:
+
+1. Clone the vcpkg repository:
+   ```bash
+   git clone https://github.com/Microsoft/vcpkg.git
+   cd vcpkg
+   ```
+
+2. Install curl and other dependencies:
+   ```bash
+   .\bootstrap-vcpkg.bat
+   .\vcpkg install curl:x64-windows
+   ```
+
+3. Configure the build:
+   ```bash
+   cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="vcpkg/scripts/buildsystems/vcpkg.cmake"
+   ```
+
+4. Build the project:
+   ```bash
+   cmake --build build --config Release
+   ```
+
+**Note:** If your antivirus moves any executable files to quarantine (e.g., Avast antivirus flagging `Win64:MalwareX-gen`), ensure to restore them from quarantine and add exceptions as necessary.
+
+## Downloading llama-server.exe
+
+To download the `llama-server.exe` from a trusted source, you can use the following command:
+
+```bash
+curl -L -o llama-server.exe https://github.com/YourRepo/llama-server/releases/latest/download/llama-server.exe
+```
+
+Replace `YourRepo` with the actual repository name where the executable is hosted.
+
+---
+
 ## 📋 Requested Features (from Development History)
 
 The following features were requested during the initial development phase:

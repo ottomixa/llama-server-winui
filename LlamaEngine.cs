@@ -1,7 +1,9 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -41,6 +43,22 @@ namespace llama_server_winui
 
         [ObservableProperty]
         private bool _isServerRunning;
+
+        // Installation details properties
+        [ObservableProperty]
+        private string _zipDownloadPath = string.Empty;
+
+        [ObservableProperty]
+        private string _extractedFolderPath = string.Empty;
+
+        [ObservableProperty]
+        private bool _isLlamaServerExePresent;
+
+        [ObservableProperty]
+        private string _llamaServerExePath = string.Empty;
+
+        [ObservableProperty]
+        private string _llamaServerVersion = string.Empty;
 
         private Process? _serverProcess;
         
@@ -220,12 +238,27 @@ namespace llama_server_winui
                             Directory.Delete(extractPath, true);
                         ZipFile.ExtractToDirectory(zipPath, extractPath);
                         Log("Extraction complete.");
+
+                        // Find llama-server.exe and get version info
+                        string exePath = FindLlamaServerExe(extractPath);
+                        string version = string.Empty;
+                        if (!string.IsNullOrEmpty(exePath))
+                        {
+                            version = GetLlamaServerVersionOutput(exePath);
+                        }
                         
                         App.MainDispatcher?.TryEnqueue(() =>
                         {
                             CurrentVersion = LatestVersion;
                             IsInstalled = true;
                             StatusMessage = "Ready ✓";
+                            
+                            // Update installation detail properties
+                            ZipDownloadPath = zipPath;
+                            ExtractedFolderPath = extractPath;
+                            LlamaServerExePath = exePath;
+                            IsLlamaServerExePresent = !string.IsNullOrEmpty(exePath);
+                            LlamaServerVersion = version;
                             IsDownloading = false;
                             DownloadProgress = 0;
                         });
@@ -277,7 +310,166 @@ namespace llama_server_winui
             try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
 
-        [RelayCommand]
+        /// <summary>
+        /// Searches for llama-server.exe in the extracted folder. 
+        /// Returns the full path if found, or empty string if not found.
+        /// </summary>
+        private string FindLlamaServerExe(string extractPath)
+        {
+            try
+            {
+                // First check direct path
+                string directPath = Path.Combine(extractPath, "llama-server.exe");
+                if (File.Exists(directPath))
+                {
+                    Log($"Found llama-server.exe at: {directPath}");
+                    return directPath;
+                }
+
+                // Search recursively
+                if (Directory.Exists(extractPath))
+                {
+                    var exeFiles = Directory.GetFiles(extractPath, "llama-server.exe", SearchOption.AllDirectories);
+                    if (exeFiles.Length > 0)
+                    {
+                        Log($"Found llama-server.exe at: {exeFiles[0]}");
+                        return exeFiles[0];
+                    }
+                }
+                
+                Log("llama-server.exe not found in extracted folder.");
+            }
+            catch (Exception ex)
+            {
+                Log($"Error searching for llama-server.exe: {ex.Message}");
+            }
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Runs llama-server.exe --version and captures the output.
+        /// Returns the version output or an error message.
+        /// </summary>
+        private string GetLlamaServerVersionOutput(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+            {
+                return "Executable not found";
+            }
+
+            try
+            {
+                Log($"Running: {exePath} --version");
+                
+                var psi = new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = "--version",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Path.GetDirectoryName(exePath)
+                };
+
+                using var process = Process.Start(psi);
+                if (process == null)
+                {
+                    return "Failed to start process";
+                }
+
+                // Wait with timeout (5 seconds)
+                bool exited = process.WaitForExit(5000);
+                if (!exited)
+                {
+                    process.Kill();
+                    return "Timed out";
+                }
+
+                string output = process.StandardOutput.ReadToEnd().Trim();
+                string error = process.StandardError.ReadToEnd().Trim();
+
+                // Some tools output version to stderr
+                string result = !string.IsNullOrEmpty(output) ? output : error;
+                
+                Log($"Version output: {result}");
+                return !string.IsNullOrEmpty(result) ? result : "No output";
+            }
+            catch (Exception ex)
+            {
+                Log($"Error getting version: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Refreshes the installation details by checking the current state.
+        /// Call this to update installation info properties.
+        /// </summary>
+        public void RefreshInstallationDetails()
+        {
+            string localFolder = GetAppStoragePath();
+            string zipPath = Path.Combine(localFolder, $"{Name}.zip");
+            string extractPath = Path.Combine(localFolder, "Engines", Name);
+
+            ZipDownloadPath = zipPath;
+            ExtractedFolderPath = extractPath;
+
+            string exePath = FindLlamaServerExe(extractPath);
+            LlamaServerExePath = exePath;
+            IsLlamaServerExePresent = !string.IsNullOrEmpty(exePath) && File.Exists(exePath);
+
+            if (IsLlamaServerExePresent)
+            {
+                IsInstalled = true;
+                LlamaServerVersion = GetLlamaServerVersionOutput(exePath);
+                
+                // Set status message if not already set
+                if (string.IsNullOrEmpty(StatusMessage) || StatusMessage == "Starting...")
+                {
+                    StatusMessage = "Ready ✓";
+                }
+            }
+            else
+            {
+                LlamaServerVersion = string.Empty;
+            }
+        }
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
+        private string _modelPath = string.Empty;
+
+        [ObservableProperty]
+        private string _validationMessage = string.Empty;
+
+        private bool CanRunServer()
+        {
+            if (!IsInstalled)
+            {
+                // ValidationMessage = "Engine not installed"; // Optional, normally button Hidden
+                return false;
+            }
+            if (IsServerRunning)
+            {
+                return false;
+            }
+            if (string.IsNullOrEmpty(ModelPath))
+            {
+                ValidationMessage = "⚠ Select a model";
+                return false;
+            }
+            if (!File.Exists(ModelPath))
+            {
+                ValidationMessage = "⚠ Model not found";
+                return false;
+            }
+            
+            ValidationMessage = string.Empty;
+            return true;
+        }
+
+        [RelayCommand(CanExecute = nameof(CanRunServer))]
         private void RunServer()
         {
             if (IsServerRunning)
@@ -308,10 +500,12 @@ namespace llama_server_winui
                 try
                 {
                     Log($"Starting server: {exePath}");
+                    Log($"Model: {ModelPath}");
+
                     var psi = new ProcessStartInfo
                     {
                         FileName = exePath,
-                        Arguments = "--port 8080",
+                        Arguments = $"--port 8080 -m \"{ModelPath}\"",
                         UseShellExecute = false,
                         CreateNoWindow = false,
                         WorkingDirectory = Path.GetDirectoryName(exePath)
@@ -325,6 +519,11 @@ namespace llama_server_winui
                         _serverProcess.Exited += OnServerExited;
                         IsServerRunning = true;
                         StatusMessage = "Server running on port 8080";
+                        // Since IsServerRunning changed, Command state should update automatically/manually if needed, 
+                        // but CanRunServer depends on IsServerRunning, so we might need to notify change.
+                        // However, IsServerRunning is ObservableProperty, maybe strict dependency isn't wired up to Command?
+                        // We will rely on manual command refresh or PropertyChanged triggers.
+                        RunServerCommand.NotifyCanExecuteChanged();
                     }
                 }
                 catch (Exception ex)
@@ -345,6 +544,7 @@ namespace llama_server_winui
             {
                 IsServerRunning = false;
                 StatusMessage = "Server stopped";
+                RunServerCommand.NotifyCanExecuteChanged();
             });
             _serverProcess = null;
         }
@@ -361,6 +561,7 @@ namespace llama_server_winui
                     _serverProcess = null;
                     IsServerRunning = false;
                     StatusMessage = "Server stopped";
+                    RunServerCommand.NotifyCanExecuteChanged();
                 }
                 catch (Exception ex)
                 {
@@ -372,11 +573,24 @@ namespace llama_server_winui
         public Visibility InverseVisibility(bool isInstalled) => 
             isInstalled ? Visibility.Collapsed : Visibility.Visible;
 
+        // Simplified visibility logic now handled by Command.CanExecute binding usually implies availability, 
+        // but for Visibility we might still want to hide/show buttons.
+        // run button is always visible if installed, but disabled if no model.
         public Visibility RunButtonVisibility(bool isInstalled, bool isServerRunning) => 
             isInstalled && !isServerRunning ? Visibility.Visible : Visibility.Collapsed;
 
         public Visibility StopButtonVisibility(bool isServerRunning) => 
             isServerRunning ? Visibility.Visible : Visibility.Collapsed;
+
+        // Helper methods for Installation Details UI
+        public string LlamaServerExeStatusIcon(bool isPresent) => 
+            isPresent ? "\uE73E" : "\uE711"; // Checkmark or X
+
+        public SolidColorBrush LlamaServerExeStatusColor(bool isPresent) => 
+            isPresent ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Red);
+
+        public string LlamaServerExeStatusText(bool isPresent) => 
+            isPresent ? "Found" : "Not Found";
     }
 }
 
