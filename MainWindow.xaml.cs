@@ -1,84 +1,96 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Dispatching;
 using System;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using llama_server_winui.Services;
-using System.Linq;
-using System.ComponentModel;
 
 namespace llama_server_winui
 {
-    // Removed [INotifyPropertyChanged] because MainWindow inherits from Window (can't change base).
+    /// <summary>
+    /// Main window implementing INotifyPropertyChanged for active engine tracking
+    /// Handles window lifecycle and synchronization with tray icon
+    /// </summary>
     public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
-        // Manually implement backing field + property to avoid source-gen AOT issues
+        // Bind to shared engines from App
+        public ObservableCollection<LlamaEngine> Engines => App.Engines;
+
+        private LlamaEngine? _activeEngine;
+        
+        /// <summary>
+        /// The currently running engine (shown in right panel)
+        /// </summary>
+        public LlamaEngine? ActiveEngine
+        {
+            get => _activeEngine;
+            private set
+            {
+                if (_activeEngine != value)
+                {
+                    _activeEngine = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HasActiveEngine));
+                    OnPropertyChanged(nameof(NoActiveEngine));
+                    UpdatePanelVisibility();
+                }
+            }
+        }
+
+        public bool HasActiveEngine => ActiveEngine != null;
+        public bool NoActiveEngine => ActiveEngine == null;
+
+        /// <summary>
+        /// Manually update panel visibility to avoid x:Bind issues with the Window class
+        /// </summary>
+        private void UpdatePanelVisibility()
+        {
+            if (LoadingOverlay != null) LoadingOverlay.Visibility = IsLoading ? Visibility.Visible : Visibility.Collapsed;
+            if (ActiveServerPanel != null) ActiveServerPanel.Visibility = HasActiveEngine ? Visibility.Visible : Visibility.Collapsed;
+            if (EmptyStatePanel != null) EmptyStatePanel.Visibility = HasActiveEngine ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private readonly GitHubService _gitHubService = new();
         private bool _isLoading;
         public bool IsLoading
         {
             get => _isLoading;
             set
             {
-                if (_isLoading == value) return;
-                _isLoading = value;
-                OnPropertyChanged(nameof(IsLoading));
+                if (_isLoading != value)
+                {
+                    _isLoading = value;
+                    OnPropertyChanged();
+                    UpdatePanelVisibility();
+                }
             }
         }
-
-        public event PropertyChangedEventHandler? PropertyChanged;
-
-        protected void OnPropertyChanged(string propertyName) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-
-        public ObservableCollection<LlamaEngine> Engines { get; set; } = new();
-        private readonly GitHubService _gitHubService = new();
 
         public MainWindow()
         {
             this.InitializeComponent();
-            this.Closed += MainWindow_Closed;
+            
+            // Handle window closing event - hide instead of close (unless exiting)
+            this.AppWindow.Closing += OnWindowClosing;
 
-            InitializeEngines();
+            // Subscribe to engine state changes
+            foreach (var engine in Engines)
+            {
+                engine.PropertyChanged += Engine_PropertyChanged;
+            }
+
+            // Set initial active engine if any is running
+            UpdateActiveEngine();
 
             // Fire and forget version check
             _ = InitializeVersionsAsync();
-        }
 
-        private void InitializeEngines()
-        {
-            // Initial State (Fallbacks)
-            Engines.Add(new LlamaEngine
-            {
-                Name = "Vulkan llama.cpp (Windows)",
-                Description = "Vulkan accelerated llama.cpp engine - Works on AMD, Intel, and NVIDIA GPUs",
-                Tag = "vulkan-fallback", // Temporary
-                LatestVersion = "Checking...",
-                ReleaseNotesUrl = "https://github.com/ggml-org/llama.cpp/releases"
-            });
-
-            Engines.Add(new LlamaEngine
-            {
-                Name = "CUDA llama.cpp (Windows)",
-                Description = "NVIDIA CUDA accelerated llama.cpp engine - Best performance on NVIDIA GPUs",
-                Tag = "b3376", // Pinned for safety
-                LatestVersion = "b3376 (Pinned)",
-                ReleaseNotesUrl = "https://github.com/ggml-org/llama.cpp/releases/tag/b3376",
-                DownloadUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b3376/llama-b3376-bin-win-cuda-cu12.2.0-x64.zip"
-            });
-
-            Engines.Add(new LlamaEngine
-            {
-                Name = "CPU llama.cpp (Windows)",
-                Description = "CPU-only llama.cpp engine using AVX2 - Works on any modern CPU",
-                Tag = "avx-fallback",
-                LatestVersion = "Checking...",
-                ReleaseNotesUrl = "https://github.com/ggml-org/llama.cpp/releases"
-            });
-
-            // Refresh installation details for engines that may already be installed
-            foreach (var engine in Engines)
-            {
-                engine.RefreshInstallationDetails();
-            }
+            // Initial update for visibility
+            UpdatePanelVisibility();
         }
 
         private async Task InitializeVersionsAsync()
@@ -86,89 +98,210 @@ namespace llama_server_winui
             try
             {
                 IsLoading = true;
-
-                // Add start delay to show the loader for at least a moment (UX)
-                await Task.Delay(1000);
+                await Task.Delay(800);
 
                 var release = await _gitHubService.GetLatestReleaseAsync();
-
                 if (release != null)
                 {
                     // Update Vulkan
                     var vulkanEngine = Engines.FirstOrDefault(e => e.Name.Contains("Vulkan"));
-                    if (vulkanEngine != null)
+                    var assetVulkan = release.Assets.FirstOrDefault(a => a.Name.Contains("bin-win-vulkan-x64.zip"));
+                    if (vulkanEngine != null && assetVulkan != null)
                     {
-                        var asset = release.Assets.FirstOrDefault(a => a.Name.Contains("bin-win-vulkan-x64.zip"));
-                        if (asset != null)
-                        {
-                            vulkanEngine.LatestVersion = release.TagName;
-                            vulkanEngine.Tag = release.TagName;
-                            vulkanEngine.DownloadUrl = asset.BrowserDownloadUrl;
-                            vulkanEngine.ReleaseNotesUrl = release.HtmlUrl;
-                        }
+                        vulkanEngine.LatestVersion = release.TagName;
+                        vulkanEngine.Tag = release.TagName;
+                        vulkanEngine.DownloadUrl = assetVulkan.BrowserDownloadUrl;
+                        vulkanEngine.ReleaseNotesUrl = release.HtmlUrl;
                     }
 
                     // Update CPU
                     var cpuEngine = Engines.FirstOrDefault(e => e.Name.Contains("CPU"));
-                    if (cpuEngine != null)
+                    var assetAVX = release.Assets.FirstOrDefault(a => a.Name.Contains("bin-win-avx2-x64.zip"));
+                    if (cpuEngine != null && assetAVX != null)
                     {
-                        var asset = release.Assets.FirstOrDefault(a => a.Name.Contains("bin-win-avx2-x64.zip"));
-                        if (asset != null)
-                        {
-                            cpuEngine.LatestVersion = release.TagName;
-                            cpuEngine.Tag = release.TagName;
-                            cpuEngine.DownloadUrl = asset.BrowserDownloadUrl;
-                            cpuEngine.ReleaseNotesUrl = release.HtmlUrl;
-                        }
+                        cpuEngine.LatestVersion = release.TagName;
+                        cpuEngine.Tag = release.TagName;
+                        cpuEngine.DownloadUrl = assetAVX.BrowserDownloadUrl;
+                        cpuEngine.ReleaseNotesUrl = release.HtmlUrl;
                     }
+                }
+            }
+            catch (Exception) { /* Keep defaults */ }
+            finally { IsLoading = false; }
+        }
 
-                    // Optional: Check CUDA if they fix the assets in future
-                    var cudaEngine = Engines.FirstOrDefault(e => e.Name.Contains("CUDA"));
-                    if (cudaEngine != null)
+        /// <summary>
+        /// Handles property changes from engines to track which one is active
+        /// </summary>
+        private void Engine_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(LlamaEngine.IsServerRunning))
+            {
+                // Update active engine when any engine's running state changes
+                App.MainDispatcher?.TryEnqueue(() =>
+                {
+                    UpdateActiveEngine();
+                });
+            }
+        }
+
+        /// <summary>
+        /// Updates the active engine based on which engine is currently running
+        /// </summary>
+        private void UpdateActiveEngine()
+        {
+            // Find the first running engine
+            var runningEngine = Engines.FirstOrDefault(e => e.IsServerRunning);
+            ActiveEngine = runningEngine;
+        }
+
+        /// <summary>
+        /// Handles window closing - hide instead of close unless app is exiting
+        /// </summary>
+        private void OnWindowClosing(Microsoft.UI.Windowing.AppWindow sender, 
+                                      Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+        {
+            // Only hide if not exiting the entire application
+            if (!((App)Application.Current).IsExiting)
+            {
+                args.Cancel = true;
+                this.AppWindow.Hide();
+            }
+            else
+            {
+                // App is exiting - stop all running servers
+                foreach (var engine in Engines)
+                {
+                    if (engine.IsServerRunning)
                     {
-                        // Loose check for any cuda 12
-                        var asset = release.Assets.FirstOrDefault(a => a.Name.Contains("cuda-cu12") && a.Name.Contains("x64.zip"));
-                        if (asset != null)
+                        try
                         {
-                            // If found, we can upgrade!
-                            cudaEngine.LatestVersion = release.TagName;
-                            cudaEngine.Tag = release.TagName;
-                            cudaEngine.DownloadUrl = asset.BrowserDownloadUrl;
-                            cudaEngine.ReleaseNotesUrl = release.HtmlUrl;
+                            engine.StopServer();
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error stopping engine during shutdown: {ex.Message}");
                         }
                     }
                 }
             }
-            catch (Exception)
+        }
+
+        // INotifyPropertyChanged implementation
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        /// <summary>
+        /// Helper method for x:Bind to convert bool to Visibility
+        /// </summary>
+        public Visibility BoolToVisibility(bool value) => value ? Visibility.Visible : Visibility.Collapsed;
+
+        // Navigation button handlers (for future implementation)
+        private void HomeButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Navigate to home view (future feature)
+            UpdateSidebarSelection(sender as Button);
+        }
+
+        private void EnginesButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Already on engines view
+            UpdateSidebarSelection(sender as Button);
+        }
+
+        private void LogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Navigate to logs view (future feature)
+            UpdateSidebarSelection(sender as Button);
+        }
+
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Navigate to settings view (future feature)
+            UpdateSidebarSelection(sender as Button);
+        }
+
+        /// <summary>
+        /// Updates sidebar button selection visual state
+        /// </summary>
+        private void UpdateSidebarSelection(Button? selectedButton)
+        {
+            if (selectedButton == null) return;
+
+            try
             {
-                // Ignore network errors, keep fallbacks
+                // Reset all buttons to default style
+                var buttons = new Button[] { HomeButton, EnginesButton, LogsButton, SettingsButton };
+
+                foreach (var button in buttons)
+                {
+                    if (button != null)
+                    {
+                        button.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                            Windows.UI.Color.FromArgb(0, 0, 0, 0)); // Transparent
+                        button.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                            Windows.UI.Color.FromArgb(255, 0, 0, 0)); // Black
+                    }
+                }
+
+                // Highlight selected button
+                selectedButton.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    Windows.UI.Color.FromArgb(255, 0, 120, 212)); // #0078D4
+                selectedButton.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    Windows.UI.Color.FromArgb(255, 255, 255, 255)); // White
             }
-            finally
+            catch (Exception ex)
             {
-                IsLoading = false;
+                System.Diagnostics.Debug.WriteLine($"Error updating sidebar selection: {ex.Message}");
             }
         }
 
-        private void MainWindow_Closed(object sender, WindowEventArgs args)
+        private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
+            // Refresh engines list (future: check for updates)
             foreach (var engine in Engines)
             {
-                if (engine.IsServerRunning)
+                // Could trigger version check here
+            }
+        }
+
+        private void ReleaseNotesButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Handle release notes toggle (future: expand/collapse inline)
+            if (sender is Button button && button.DataContext is LlamaEngine engine)
+            {
+                // Navigate to release notes URL
+                try
                 {
-                    engine.StopServer();
+                    var uri = new Uri(engine.ReleaseNotesUrl);
+                    _ = Windows.System.Launcher.LaunchUriAsync(uri);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error opening release notes: {ex.Message}");
                 }
             }
         }
 
-        private async void PickModel_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        private void ViewLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Microsoft.UI.Xaml.Controls.Button btn && btn.DataContext is LlamaEngine engine)
+            if (ActiveEngine != null)
+            {
+                // Navigate to logs view with this engine's logs
+                LogsButton_Click(LogsButton, new RoutedEventArgs());
+            }
+        }
+
+        private async void PickModel_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.DataContext is LlamaEngine engine)
             {
                 var picker = new Windows.Storage.Pickers.FileOpenPicker();
-
-                // Retrieve the window handle (HWND) of the current WinUI 3 window
                 var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                // Initialize the file picker with the window handle
                 WinRT.Interop.InitializeWithWindow.Initialize(picker, hWnd);
 
                 picker.ViewMode = Windows.Storage.Pickers.PickerViewMode.List;
@@ -184,9 +317,30 @@ namespace llama_server_winui
             }
         }
 
-        public Visibility BoolToVisibility(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
+        private void StopActiveServerButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ActiveEngine != null)
+            {
+                ActiveEngine.StopServer();
+            }
+        }
+
+        private void RestartServerButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ActiveEngine != null && ActiveEngine.IsServerRunning)
+            {
+                // Stop and restart
+                ActiveEngine.StopServer();
+                
+                // Wait a moment then restart
+                var timer = new System.Threading.Timer(async _ =>
+                {
+                    App.MainDispatcher?.TryEnqueue(async () =>
+                    {
+                        await ActiveEngine.RunServerCommand.ExecuteAsync(null);
+                    });
+                }, null, TimeSpan.FromSeconds(2), System.Threading.Timeout.InfiniteTimeSpan);
+            }
+        }
     }
 }
-
-
-
