@@ -277,7 +277,40 @@ namespace llama_server_winui
             try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
 
-        [RelayCommand]
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
+        private string _modelPath = string.Empty;
+
+        [ObservableProperty]
+        private string _validationMessage = string.Empty;
+
+        private bool CanRunServer()
+        {
+            if (!IsInstalled)
+            {
+                // ValidationMessage = "Engine not installed"; // Optional, normally button Hidden
+                return false;
+            }
+            if (IsServerRunning)
+            {
+                return false;
+            }
+            if (string.IsNullOrEmpty(ModelPath))
+            {
+                ValidationMessage = "⚠ Select a model";
+                return false;
+            }
+            if (!File.Exists(ModelPath))
+            {
+                ValidationMessage = "⚠ Model not found";
+                return false;
+            }
+            
+            ValidationMessage = string.Empty;
+            return true;
+        }
+
+        [RelayCommand(CanExecute = nameof(CanRunServer))]
         private void RunServer()
         {
             if (IsServerRunning)
@@ -308,10 +341,12 @@ namespace llama_server_winui
                 try
                 {
                     Log($"Starting server: {exePath}");
+                    Log($"Model: {ModelPath}");
+
                     var psi = new ProcessStartInfo
                     {
                         FileName = exePath,
-                        Arguments = "--port 8080",
+                        Arguments = $"--port 8080 -m \"{ModelPath}\"",
                         UseShellExecute = false,
                         CreateNoWindow = false,
                         WorkingDirectory = Path.GetDirectoryName(exePath)
@@ -325,6 +360,11 @@ namespace llama_server_winui
                         _serverProcess.Exited += OnServerExited;
                         IsServerRunning = true;
                         StatusMessage = "Server running on port 8080";
+                        // Since IsServerRunning changed, Command state should update automatically/manually if needed, 
+                        // but CanRunServer depends on IsServerRunning, so we might need to notify change.
+                        // However, IsServerRunning is ObservableProperty, maybe strict dependency isn't wired up to Command?
+                        // We will rely on manual command refresh or PropertyChanged triggers.
+                        RunServerCommand.NotifyCanExecuteChanged();
                     }
                 }
                 catch (Exception ex)
@@ -345,6 +385,7 @@ namespace llama_server_winui
             {
                 IsServerRunning = false;
                 StatusMessage = "Server stopped";
+                RunServerCommand.NotifyCanExecuteChanged();
             });
             _serverProcess = null;
         }
@@ -361,6 +402,7 @@ namespace llama_server_winui
                     _serverProcess = null;
                     IsServerRunning = false;
                     StatusMessage = "Server stopped";
+                    RunServerCommand.NotifyCanExecuteChanged();
                 }
                 catch (Exception ex)
                 {
@@ -372,6 +414,9 @@ namespace llama_server_winui
         public Visibility InverseVisibility(bool isInstalled) => 
             isInstalled ? Visibility.Collapsed : Visibility.Visible;
 
+        // Simplified visibility logic now handled by Command.CanExecute binding usually implies availability, 
+        // but for Visibility we might still want to hide/show buttons.
+        // run button is always visible if installed, but disabled if no model.
         public Visibility RunButtonVisibility(bool isInstalled, bool isServerRunning) => 
             isInstalled && !isServerRunning ? Visibility.Visible : Visibility.Collapsed;
 
