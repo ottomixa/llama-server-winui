@@ -41,6 +41,7 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -137,6 +138,86 @@
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
+
+                            <!-- Installation Details Section (visible when installed) -->
+                            <Border Grid.Row="5" Grid.ColumnSpan="2" 
+                                    Background="#F8F9FA" 
+                                    CornerRadius="6" 
+                                    Padding="12" 
+                                    Margin="0,10,0,0"
+                                    Visibility="{x:Bind IsInstalled, Mode=OneWay}"
+                                    BorderBrush="#E0E0E0"
+                                    BorderThickness="1">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE946;" FontSize="14" Foreground="#666"/>
+                                        <TextBlock Text="Installation Details" FontWeight="SemiBold" FontSize="13" Foreground="#333"/>
+                                    </StackPanel>
+                                    
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="140"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Zip Download Path -->
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Zip Downloaded To:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="0,2"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" 
+                                                   Text="{x:Bind ZipDownloadPath, Mode=OneWay}" 
+                                                   FontSize="12" Foreground="#333" 
+                                                   TextWrapping="Wrap" Margin="0,2"
+                                                   IsTextSelectionEnabled="True"/>
+
+                                        <!-- Extracted Folder Path -->
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Extracted To:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="0,2"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" 
+                                                   Text="{x:Bind ExtractedFolderPath, Mode=OneWay}" 
+                                                   FontSize="12" Foreground="#333" 
+                                                   TextWrapping="Wrap" Margin="0,2"
+                                                   IsTextSelectionEnabled="True"/>
+
+                                        <!-- llama-server.exe Status -->
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="llama-server.exe:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="0,2"/>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="0,2">
+                                            <FontIcon Glyph="{x:Bind LlamaServerExeStatusIcon(IsLlamaServerExePresent), Mode=OneWay}" 
+                                                      FontSize="12"
+                                                      Foreground="{x:Bind LlamaServerExeStatusColor(IsLlamaServerExePresent), Mode=OneWay}"/>
+                                            <TextBlock Text="{x:Bind LlamaServerExeStatusText(IsLlamaServerExePresent), Mode=OneWay}" 
+                                                       FontSize="12" 
+                                                       Foreground="{x:Bind LlamaServerExeStatusColor(IsLlamaServerExePresent), Mode=OneWay}"/>
+                                            <TextBlock Text="{x:Bind LlamaServerExePath, Mode=OneWay}" 
+                                                       FontSize="11" Foreground="#888" 
+                                                       TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="400"
+                                                       ToolTipService.ToolTip="{x:Bind LlamaServerExePath, Mode=OneWay}"
+                                                       Visibility="{x:Bind IsLlamaServerExePresent, Mode=OneWay}"
+                                                       IsTextSelectionEnabled="True"/>
+                                        </StackPanel>
+
+                                        <!-- llama-server.exe Version -->
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Version Output:" 
+                                                   FontSize="12" Foreground="#666" VerticalAlignment="Top" Margin="0,2"/>
+                                        <Border Grid.Row="3" Grid.Column="1" 
+                                                Background="#EEEEEE" CornerRadius="4" Padding="8,4" Margin="0,2"
+                                                Visibility="{x:Bind IsLlamaServerExePresent, Mode=OneWay}">
+                                            <TextBlock Text="{x:Bind LlamaServerVersion, Mode=OneWay}" 
+                                                       FontSize="11" FontFamily="Consolas"
+                                                       Foreground="#333" 
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True"/>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
 
                         </Grid>
                     </Border>

@@ -73,6 +73,12 @@ namespace llama_server_winui
                 LatestVersion = "Checking...",
                 ReleaseNotesUrl = "https://github.com/ggml-org/llama.cpp/releases"
             });
+
+            // Refresh installation details for engines that may already be installed
+            foreach (var engine in Engines)
+            {
+                engine.RefreshInstallationDetails();
+            }
         }
 
         private async Task InitializeVersionsAsync()
