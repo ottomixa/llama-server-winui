@@ -14,6 +14,7 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>

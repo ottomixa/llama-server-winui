@@ -97,7 +97,7 @@ namespace llama_server_winui
 
             foreach (var engine in Engines)
             {
-                engine.RefreshInstallationDetails();
+                _ = engine.RefreshInstallationDetailsAsync();
             }
         }
 

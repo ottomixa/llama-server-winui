@@ -124,6 +124,27 @@ namespace llama_server_winui
                         cpuEngine.DownloadUrl = assetAVX.BrowserDownloadUrl;
                         cpuEngine.ReleaseNotesUrl = release.HtmlUrl;
                     }
+
+                    // Update CUDA
+                    var cudaEngine = Engines.FirstOrDefault(e => e.Name.Contains("CUDA"));
+                    
+                    // Filter out cudart libraries (start with cudart) and ensure x64
+                    var validAssets = release.Assets.Where(a => !a.Name.StartsWith("cudart") && a.Name.Contains("x64.zip"));
+
+                    // Prefer CUDA 12, fallback to any valid CUDA
+                    var assetCuda = validAssets.FirstOrDefault(a => a.Name.Contains("bin-win-cuda-cu12"));
+                    if (assetCuda == null) 
+                    {
+                         assetCuda = validAssets.FirstOrDefault(a => a.Name.Contains("bin-win-cuda"));
+                    }
+
+                    if (cudaEngine != null && assetCuda != null)
+                    {
+                        cudaEngine.LatestVersion = release.TagName;
+                        cudaEngine.Tag = release.TagName;
+                        cudaEngine.DownloadUrl = assetCuda.BrowserDownloadUrl;
+                        cudaEngine.ReleaseNotesUrl = release.HtmlUrl;
+                    }
                 }
             }
             catch (Exception) { /* Keep defaults */ }
@@ -296,24 +317,120 @@ namespace llama_server_winui
             }
         }
 
+        private async Task<string?> PickModelFileAsync()
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hWnd);
+
+            picker.ViewMode = Windows.Storage.Pickers.PickerViewMode.List;
+            picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add(".gguf");
+            picker.FileTypeFilter.Add(".bin");
+
+            var file = await picker.PickSingleFileAsync();
+            return file?.Path;
+        }
+
+        private async Task<string?> PromptForModelPathAsync(LlamaEngine engine)
+        {
+            var currentPath = engine.ModelPath ?? string.Empty;
+
+            var pathBox = new TextBox
+            {
+                Text = currentPath,
+                IsReadOnly = true,
+                PlaceholderText = "Select a model...",
+                Height = 36,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                MinWidth = 360,
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+
+            var browseButton = new Button
+            {
+                Content = "Browse",
+                Height = 36,
+                MinWidth = 90
+            };
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(pathBox);
+            row.Children.Add(browseButton);
+            Grid.SetColumn(browseButton, 1);
+
+            var panel = new StackPanel { Spacing = 10 };
+            panel.Children.Add(new TextBlock { Text = "Model File (.gguf / .bin)", FontSize = 12 });
+            panel.Children.Add(row);
+
+            var root = (Content as FrameworkElement)?.XamlRoot;
+            if (root == null)
+            {
+                return await PickModelFileAsync();
+            }
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = root,
+                Title = $"Select Model for {engine.Name}",
+                Content = panel,
+                PrimaryButtonText = "Start Server",
+                SecondaryButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+                IsPrimaryButtonEnabled = !string.IsNullOrWhiteSpace(currentPath)
+            };
+
+            browseButton.Click += async (_, __) =>
+            {
+                var pickedPath = await PickModelFileAsync();
+                if (!string.IsNullOrWhiteSpace(pickedPath))
+                {
+                    pathBox.Text = pickedPath;
+                    dialog.IsPrimaryButtonEnabled = true;
+                }
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(pathBox.Text))
+            {
+                return pathBox.Text;
+            }
+
+            return null;
+        }
+
         private async void PickModel_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.DataContext is LlamaEngine engine)
             {
-                var picker = new Windows.Storage.Pickers.FileOpenPicker();
-                var hWnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                WinRT.Interop.InitializeWithWindow.Initialize(picker, hWnd);
-
-                picker.ViewMode = Windows.Storage.Pickers.PickerViewMode.List;
-                picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
-                picker.FileTypeFilter.Add(".gguf");
-                picker.FileTypeFilter.Add(".bin");
-
-                var file = await picker.PickSingleFileAsync();
-                if (file != null)
+                var path = await PickModelFileAsync();
+                if (!string.IsNullOrWhiteSpace(path))
                 {
-                    engine.ModelPath = file.Path;
+                    engine.ModelPath = path;
                 }
+            }
+        }
+
+        private async void RunServerButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.DataContext is LlamaEngine engine)
+            {
+                if (!engine.IsInstalled || engine.IsServerRunning)
+                {
+                    return;
+                }
+
+                var pickedPath = await PromptForModelPathAsync(engine);
+                if (string.IsNullOrWhiteSpace(pickedPath))
+                {
+                    return;
+                }
+
+                engine.ModelPath = pickedPath;
+
+                await engine.RunServerCommand.ExecuteAsync(null);
             }
         }
 

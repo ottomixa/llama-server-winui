@@ -8,12 +8,24 @@ using System.IO;
 using System.IO.Compression;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using llama_server_winui.Services;
 
 namespace llama_server_winui
 {
     public partial class LlamaEngine : ObservableObject
     {
+        public LlamaEngine()
+        {
+            CurrentVersion = string.Empty;
+            LatestVersion = string.Empty;
+            StatusMessage = string.Empty;
+            ModelPath = string.Empty;
+            ExtractedFolderPath = string.Empty;
+            LlamaServerExePath = string.Empty;
+            LlamaServerVersion = "Unknown";
+        }
+
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string Tag { get; set; } = "Engine";
@@ -21,43 +33,66 @@ namespace llama_server_winui
         public string ReleaseNotesUrl { get; set; } = string.Empty;
 
         [ObservableProperty]
-        private string _currentVersion = string.Empty;
+        public partial string CurrentVersion { get; set; }
 
         [ObservableProperty]
-        private string _latestVersion = string.Empty;
+        public partial string LatestVersion { get; set; }
 
-        [ObservableProperty]
-        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
-        private bool _isInstalled;
+        public string InstalledVersionDisplay
+        {
+            get
+            {
+                var version = string.IsNullOrWhiteSpace(CurrentVersion) ||
+                              CurrentVersion.Equals("Not installed", StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty
+                    : CurrentVersion;
 
-        [ObservableProperty]
-        private bool _isDownloading;
+                return IsInstalled
+                    ? (string.IsNullOrWhiteSpace(version) ? "Installed" : $"Installed {version}")
+                    : "Not installed";
+            }
+        }
 
-        [ObservableProperty]
-        private double _downloadProgress;
-
-        [ObservableProperty]
-        private string _statusMessage = string.Empty;
-
-        [ObservableProperty]
-        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
-        private string _modelPath = string.Empty;
-
-        [ObservableProperty]
-        private string _extractedFolderPath = string.Empty;
-
-        [ObservableProperty]
-        private string _llamaServerExePath = string.Empty;
-
-        [ObservableProperty]
-        private string _llamaServerVersion = "Unknown";
+        public string AvailableVersionDisplay =>
+            string.IsNullOrWhiteSpace(LatestVersion)
+                ? "Available --"
+                : $"Available {LatestVersion}";
 
         [ObservableProperty]
         [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
-        private bool _isServerRunning;
+        public partial bool IsInstalled { get; set; }
 
         [ObservableProperty]
-        private ProcessMetrics? _currentMetrics;
+        public partial bool IsUpdateAvailable { get; set; }
+
+        [ObservableProperty]
+        public partial bool IsDownloading { get; set; }
+
+        [ObservableProperty]
+        public partial double DownloadProgress { get; set; }
+
+        [ObservableProperty]
+        public partial string StatusMessage { get; set; }
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
+        public partial string ModelPath { get; set; }
+
+        [ObservableProperty]
+        public partial string ExtractedFolderPath { get; set; }
+
+        [ObservableProperty]
+        public partial string LlamaServerExePath { get; set; }
+
+        [ObservableProperty]
+        public partial string LlamaServerVersion { get; set; }
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
+        public partial bool IsServerRunning { get; set; }
+
+        [ObservableProperty]
+        public partial ProcessMetrics? CurrentMetrics { get; set; }
 
         private ProcessLifecycleManager? _processManager;
         
@@ -128,6 +163,14 @@ namespace llama_server_winui
                 IsDownloading = true;
                 DownloadProgress = 0;
                 StatusMessage = "Starting...";
+
+                if (IsServerRunning)
+                {
+                    StatusMessage = "Stopping server...";
+                    StopServer();
+                    await Task.Delay(2000);
+                }
+
                 Log($"Starting download for {Name}...");
                 
                 _tracker.Reset();
@@ -226,13 +269,30 @@ namespace llama_server_winui
                 _progressTimer?.Stop();
                 StatusMessage = "Extracting...";
                 
-                Task.Run(() =>
+                Task.Run(async () =>
                 {
                     try
                     {
                         Log($"Extracting to {extractPath}...");
+                        // Ensure no processes are locking the folder
+                        KillLlamaServerProcesses(extractPath);
+
                         if (Directory.Exists(extractPath))
-                            Directory.Delete(extractPath, true);
+                        {
+                            // Try to rename first (atomic and less prone to locking)
+                            string trashPath = extractPath + "_trash_" + DateTime.Now.Ticks;
+                            try
+                            {
+                                Directory.Move(extractPath, trashPath);
+                                // Delete trash in background
+                                _ = Task.Run(() => RetryDeleteDirectoryAsync(trashPath));
+                            }
+                            catch
+                            {
+                                // Fallback to direct delete if move fails
+                                await RetryDeleteDirectoryAsync(extractPath);
+                            }
+                        }
                         ZipFile.ExtractToDirectory(zipPath, extractPath);
                         Log("Extraction complete.");
                         
@@ -243,7 +303,7 @@ namespace llama_server_winui
                             StatusMessage = "Ready ✓";
                             IsDownloading = false;
                             DownloadProgress = 0;
-                            RefreshInstallationDetails();
+                            _ = RefreshInstallationDetailsAsync();
                         });
                     }
                     catch (Exception ex)
@@ -339,10 +399,17 @@ namespace llama_server_winui
                 _processManager.StateChanged += OnProcessStateChanged;
                 _processManager.OutputReceived += OnOutputReceived;
                 
+                var args = "--port 8080";
+                if (!string.IsNullOrWhiteSpace(ModelPath))
+                {
+                    var safeModelPath = ModelPath.Replace("\"", "\\\"");
+                    args += $" --model \"{safeModelPath}\"";
+                }
+
                 var psi = new ProcessStartInfo
                 {
                     FileName = exePath,
-                    Arguments = "--port 8080",
+                    Arguments = args,
                     WorkingDirectory = Path.GetDirectoryName(exePath)
                 };
                 
@@ -448,12 +515,64 @@ namespace llama_server_winui
         public Visibility RunButtonVisibility(bool isInstalled, bool isServerRunning) => 
             isInstalled && !isServerRunning ? Visibility.Visible : Visibility.Collapsed;
 
+
+        public Visibility DownloadButtonVisibility(bool isInstalled, bool isUpdateAvailable) =>
+            !isInstalled || isUpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
+
+        public string DownloadButtonText =>
+            !IsInstalled ? "Install" : (IsUpdateAvailable ? "Update" : "Install");
+        
+        public string VersionStatusText => IsUpdateAvailable ? "New Version available" : "Latest Version Installed";
+
+        partial void OnCurrentVersionChanged(string value)
+        {
+            CheckUpdateAvailable();
+            OnPropertyChanged(nameof(InstalledVersionDisplay));
+        }
+
+        partial void OnLatestVersionChanged(string value)
+        {
+            CheckUpdateAvailable();
+            OnPropertyChanged(nameof(AvailableVersionDisplay));
+        }
+
+        partial void OnIsInstalledChanged(bool value)
+        {
+            CheckUpdateAvailable();
+            OnPropertyChanged(nameof(InstalledVersionDisplay));
+            OnPropertyChanged(nameof(DownloadButtonText));
+        }
+
+        private void CheckUpdateAvailable()
+        {
+            if (string.IsNullOrEmpty(CurrentVersion) || string.IsNullOrEmpty(LatestVersion))
+            {
+                IsUpdateAvailable = false;
+                return;
+            }
+
+            var cur = ExtractBuildNumber(CurrentVersion);
+            var lat = ExtractBuildNumber(LatestVersion);
+            // Show update if available and we are installed
+            IsUpdateAvailable = IsInstalled && cur > 0 && lat > 0 && lat > cur;
+            OnPropertyChanged(nameof(DownloadButtonText));
+            OnPropertyChanged(nameof(VersionStatusText));
+        }
+
+        private int ExtractBuildNumber(string version)
+        {
+            var match = Regex.Match(version, @"(?:b)?(\d+)");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out int ver))
+                return ver;
+            return 0;
+        }
+
         public Visibility StopButtonVisibility(bool isServerRunning) => 
             isServerRunning ? Visibility.Visible : Visibility.Collapsed;
 
         private bool CanRunServer() => IsInstalled && !IsServerRunning && !string.IsNullOrEmpty(ModelPath);
 
-        public void RefreshInstallationDetails()
+        public async Task RefreshInstallationDetailsAsync()
         {            
             try
             {
@@ -478,14 +597,92 @@ namespace llama_server_winui
                 if (File.Exists(exePath))
                 {
                     LlamaServerExePath = exePath;
-                    LlamaServerVersion = "llama-server (ready)";
                     IsInstalled = true;
+
+                    // Check version
+                    var ver = await GetLlamaServerVersionAsync(exePath);
+                    if (!string.IsNullOrEmpty(ver))
+                    {
+                        CurrentVersion = "b" + ver;
+                        LlamaServerVersion = $"llama-server (b{ver})";
+                    }
+                    else 
+                    {
+                        LlamaServerVersion = "llama-server (ready)";
+                    }
                 }
                 else
                 {
                     LlamaServerExePath = "Not installed";
                     LlamaServerVersion = "N/A";
                     IsInstalled = false;
+                }
+            }
+            catch { }
+        }
+
+        private async Task<string> GetLlamaServerVersionAsync(string path)
+        {
+            try 
+            {
+                var psi = new ProcessStartInfo 
+                {
+                    FileName = path,
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var p = Process.Start(psi);
+                if (p != null)
+                {
+                    var stdoutTask = p.StandardOutput.ReadToEndAsync();
+                    var stderrTask = p.StandardError.ReadToEndAsync();
+                    await Task.WhenAll(stdoutTask, stderrTask);
+                    await p.WaitForExitAsync();
+                    
+                    var output = stdoutTask.Result + "\n" + stderrTask.Result;
+                    var match = Regex.Match(output, @"version:\s*(\d+)");
+                    if (match.Success) return match.Groups[1].Value;
+                }
+            }
+            catch {}
+            return string.Empty;
+        }
+
+        private async Task RetryDeleteDirectoryAsync(string path, int maxRetries = 10, int delayMs = 500)
+        {
+            for (int i = 0; i < maxRetries; i++)
+            {
+                try
+                {
+                    if (Directory.Exists(path))
+                        Directory.Delete(path, true);
+                    return;
+                }
+                catch (Exception)
+                {
+                    if (i == maxRetries - 1) throw;
+                    await Task.Delay(delayMs);
+                }
+            }
+        }
+
+        private void KillLlamaServerProcesses(string pathToCheck)
+        {
+            try
+            {
+                var processes = Process.GetProcessesByName("llama-server");
+                foreach (var p in processes)
+                {
+                    try 
+                    {
+                        var processPath = p.MainModule?.FileName;
+                        if (!string.IsNullOrEmpty(processPath) && processPath.Contains(pathToCheck, StringComparison.OrdinalIgnoreCase))
+                            p.Kill();
+                    }
+                    catch { }
                 }
             }
             catch { }
