@@ -3,11 +3,14 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Dispatching;
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using llama_server_winui.Services;
+using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 
 namespace llama_server_winui
 {
@@ -17,10 +20,43 @@ namespace llama_server_winui
     /// </summary>
     public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
+        // Allow generated code to pass the Window instance where a FrameworkElement is expected
+        // by implicitly converting MainWindow to its root FrameworkElement (RootGrid).
+        // Guarantee a non-null FrameworkElement is returned to satisfy nullable analysis.
+        public static implicit operator Microsoft.UI.Xaml.FrameworkElement(MainWindow? window)
+        {
+            if (window is null)
+            {
+                throw new ArgumentNullException(nameof(window));
+            }
+
+            // The implicit conversion may be called by generated XAML binding code
+            // before `InitializeComponent()` has populated named elements like `RootGrid`.
+            // Return a harmless fallback FrameworkElement instead of throwing to
+            // avoid crashing during XAML wiring. This preserves behavior while the
+            // real visual tree is initialized.
+            var root = window.RootGrid;
+            if (root is null)
+            {
+                try
+                {
+                    var _log = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "llama_startup.log");
+                    System.IO.File.AppendAllText(_log, $"[MainWindow] RootGrid null in implicit operator at {DateTime.Now}\r\n");
+                }
+                catch { }
+                return new Microsoft.UI.Xaml.Controls.Grid();
+            }
+
+            return root;
+        }
+
         // Bind to shared engines from App
         public ObservableCollection<LlamaEngine> Engines => App.Engines;
 
         private LlamaEngine? _activeEngine;
+        private LlamaEngine? _selectedLogEngine;
+        private readonly ObservableCollection<EngineLogEntry> _emptyLogEntries = new();
+        private bool _isLogsView;
         
         /// <summary>
         /// The currently running engine (shown in right panel)
@@ -40,6 +76,41 @@ namespace llama_server_winui
                 }
             }
         }
+
+        public LlamaEngine? SelectedLogEngine
+        {
+            get => _selectedLogEngine;
+            set
+            {
+                if (_selectedLogEngine != value)
+                {
+                    UnsubscribeLogEvents(_selectedLogEngine);
+                    _selectedLogEngine = value;
+                    SubscribeLogEvents(_selectedLogEngine);
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(SelectedLogEntries));
+                }
+            }
+        }
+
+        public ObservableCollection<EngineLogEntry> SelectedLogEntries =>
+            SelectedLogEngine?.LogEntries ?? _emptyLogEntries;
+
+        public bool IsLogsView
+        {
+            get => _isLogsView;
+            private set
+            {
+                if (_isLogsView != value)
+                {
+                    _isLogsView = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsEnginesView));
+                }
+            }
+        }
+
+        public bool IsEnginesView => !IsLogsView;
 
         public bool HasActiveEngine => ActiveEngine != null;
         public bool NoActiveEngine => ActiveEngine == null;
@@ -72,7 +143,22 @@ namespace llama_server_winui
 
         public MainWindow()
         {
-            this.InitializeComponent();
+            var _log = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "llama_startup.log");
+            try
+            {
+                System.IO.File.AppendAllText(_log, $"[MainWindow] Before InitializeComponent: {DateTime.Now}\r\n");
+                this.InitializeComponent();
+                System.IO.File.AppendAllText(_log, $"[MainWindow] After InitializeComponent: {DateTime.Now}\r\n");
+            }
+            catch (Exception ex)
+            {
+                try { System.IO.File.AppendAllText(_log, $"[MainWindow] InitializeComponent Exception: {ex}\r\n"); } catch {}
+                throw;
+            }
+            if (RootGrid != null)
+            {
+                RootGrid.DataContext = this;
+            }
             
             // Handle window closing event - hide instead of close (unless exiting)
             this.AppWindow.Closing += OnWindowClosing;
@@ -85,6 +171,8 @@ namespace llama_server_winui
 
             // Set initial active engine if any is running
             UpdateActiveEngine();
+            SelectedLogEngine = ActiveEngine ?? Engines.FirstOrDefault();
+            IsLogsView = false;
 
             // Fire and forget version check
             _ = InitializeVersionsAsync();
@@ -174,6 +262,44 @@ namespace llama_server_winui
             // Find the first running engine
             var runningEngine = Engines.FirstOrDefault(e => e.IsServerRunning);
             ActiveEngine = runningEngine;
+            if (SelectedLogEngine == null && runningEngine != null)
+            {
+                SelectedLogEngine = runningEngine;
+            }
+        }
+
+        private void SubscribeLogEvents(LlamaEngine? engine)
+        {
+            if (engine == null)
+            {
+                return;
+            }
+
+            engine.LogEntries.CollectionChanged += LogEntries_CollectionChanged;
+        }
+
+        private void UnsubscribeLogEvents(LlamaEngine? engine)
+        {
+            if (engine == null)
+            {
+                return;
+            }
+
+            engine.LogEntries.CollectionChanged -= LogEntries_CollectionChanged;
+        }
+
+        private void LogEntries_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (LogsListView == null || LogsListView.Items.Count == 0)
+            {
+                return;
+            }
+
+            var lastIndex = LogsListView.Items.Count - 1;
+            if (lastIndex >= 0)
+            {
+                LogsListView.ScrollIntoView(LogsListView.Items[lastIndex]);
+            }
         }
 
         /// <summary>
@@ -225,24 +351,32 @@ namespace llama_server_winui
         private void HomeButton_Click(object sender, RoutedEventArgs e)
         {
             // Navigate to home view (future feature)
+            IsLogsView = false;
             UpdateSidebarSelection(sender as Button);
         }
 
         private void EnginesButton_Click(object sender, RoutedEventArgs e)
         {
             // Already on engines view
+            IsLogsView = false;
             UpdateSidebarSelection(sender as Button);
         }
 
         private void LogsButton_Click(object sender, RoutedEventArgs e)
         {
             // Navigate to logs view (future feature)
+            IsLogsView = true;
+            if (SelectedLogEngine == null)
+            {
+                SelectedLogEngine = ActiveEngine ?? Engines.FirstOrDefault();
+            }
             UpdateSidebarSelection(sender as Button);
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
             // Navigate to settings view (future feature)
+            IsLogsView = false;
             UpdateSidebarSelection(sender as Button);
         }
 
@@ -313,8 +447,14 @@ namespace llama_server_winui
             if (ActiveEngine != null)
             {
                 // Navigate to logs view with this engine's logs
+                SelectedLogEngine = ActiveEngine;
                 LogsButton_Click(LogsButton, new RoutedEventArgs());
             }
+        }
+
+        private void ClearLogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedLogEngine?.LogEntries.Clear();
         }
 
         private async Task<string?> PickModelFileAsync()
@@ -417,7 +557,7 @@ namespace llama_server_winui
         {
             if (sender is Button btn && btn.DataContext is LlamaEngine engine)
             {
-                if (!engine.IsInstalled || engine.IsServerRunning)
+                if (!engine.IsInstalled || engine.IsServerRunning || engine.IsServerStarting || engine.IsServerStopping)
                 {
                     return;
                 }
@@ -449,14 +589,28 @@ namespace llama_server_winui
                 // Stop and restart
                 ActiveEngine.StopServer();
                 
-                // Wait a moment then restart
-                var timer = new System.Threading.Timer(async _ =>
+                _ = Task.Run(async () =>
                 {
+                    await WaitForServerStopAsync(ActiveEngine);
                     App.MainDispatcher?.TryEnqueue(async () =>
                     {
                         await ActiveEngine.RunServerCommand.ExecuteAsync(null);
                     });
-                }, null, TimeSpan.FromSeconds(2), System.Threading.Timeout.InfiniteTimeSpan);
+                });
+            }
+        }
+
+        private static async Task WaitForServerStopAsync(LlamaEngine engine, int timeoutMs = 15000)
+        {
+            var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (!engine.IsServerRunning && !engine.IsServerStopping)
+                {
+                    return;
+                }
+
+                await Task.Delay(300);
             }
         }
     }

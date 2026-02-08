@@ -9,7 +9,7 @@
     mc:Ignorable="d"
     Title="Llama Server Manager">
 
-    <Grid MinWidth="1100" MinHeight="600">
+    <Grid x:Name="RootGrid" MinWidth="1100" MinHeight="600">
 
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200"/>
@@ -97,22 +97,30 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0">
+                <StackPanel Grid.Column="0" Visibility="{Binding IsEnginesView, Converter={StaticResource BoolToVisibilityConverter}}">
                     <TextBlock Text="Runtime Extension Packs" FontSize="20" FontWeight="SemiBold"/>
                     <TextBlock Text="Download and manage llama.cpp engine binaries" 
                                FontSize="13" Foreground="#666" Margin="0,5,0,0"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <StackPanel Grid.Column="0" Visibility="{Binding IsLogsView, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Server Logs" FontSize="20" FontWeight="SemiBold"/>
+                    <TextBlock Text="Live output from llama.cpp runtime" 
+                               FontSize="13" Foreground="#666" Margin="0,5,0,0"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center"
+                            Visibility="{Binding IsEnginesView, Converter={StaticResource BoolToVisibilityConverter}}">
                     <ComboBox SelectedIndex="0" Width="120">
                         <ComboBoxItem Content="Stable"/>
                         <ComboBoxItem Content="Beta"/>
                     </ComboBox>
                     <Button Content="↻ Refresh" Height="32" Background="#F0F0F0" Click="RefreshButton_Click"/>
                 </StackPanel>
+
             </Grid>
 
-            <ScrollViewer Grid.Row="1" Padding="30,20">
+            <ScrollViewer Padding="30,20" Visibility="{Binding IsEnginesView, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl ItemsSource="{x:Bind Engines}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="local:LlamaEngine">
@@ -121,6 +129,7 @@
                                     Padding="20" Margin="0,0,0,15">
                                 <Grid>
                                     <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
@@ -139,14 +148,14 @@
 
                                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                                             <Ellipse Width="10" Height="10" VerticalAlignment="Center"
-                                                     Visibility="{x:Bind BoolToVisibility(IsServerRunning), Mode=OneWay}"
+                                                     Visibility="{x:Bind IsServerRunning, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
                                                      Fill="#4CAF50"/>
                                             <TextBlock Text="{x:Bind Name}" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center"/>
                                             <Border Background="#F0F0F0" CornerRadius="4" Padding="8,3">
                                                 <TextBlock Text="{x:Bind InstalledVersionDisplay, Mode=OneWay}" FontSize="12" Foreground="#666"/>
                                             </Border>
                                             <Border Background="#E8F5E9" CornerRadius="4" Padding="8,3"
-                                                    Visibility="{x:Bind BoolToVisibility(IsServerRunning), Mode=OneWay}">
+                                                    Visibility="{x:Bind IsServerRunning, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
                                                 <TextBlock Text="RUNNING" FontSize="11" Foreground="#2E7D32" FontWeight="Bold"/>
                                             </Border>
                                         </StackPanel>
@@ -157,19 +166,19 @@
                                             </Border>
 
                                             <Button Command="{x:Bind DownloadAndInstallCommand}" 
-                                                    Visibility="{x:Bind DownloadButtonVisibility(IsInstalled, IsUpdateAvailable), Mode=OneWay}"
+                                                    Visibility="{x:Bind DownloadButtonVisibility, Mode=OneWay}"
                                                     Background="#2DA44E" Foreground="White" 
                                                     CornerRadius="4" Padding="15,8">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <ProgressRing IsActive="{x:Bind IsDownloading, Mode=OneWay}" 
                                                                   Width="16" Height="16" Foreground="White"
-                                                                  Visibility="{x:Bind BoolToVisibility(IsDownloading), Mode=OneWay}"/>
+                                                                  Visibility="{x:Bind IsDownloading, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"/>
                                                     <FontIcon Glyph="&#xE896;" FontSize="14"
-                                                              Visibility="{x:Bind InverseVisibility(IsDownloading), Mode=OneWay}"/>
+                                                              Visibility="{x:Bind IsNotDownloadingVisibility, Mode=OneWay}"/>
                                                     <TextBlock Text="{x:Bind DownloadButtonText, Mode=OneWay}"
-                                                               Visibility="{x:Bind InverseVisibility(IsDownloading), Mode=OneWay}"/>
+                                                               Visibility="{x:Bind IsNotDownloadingVisibility, Mode=OneWay}"/>
                                                     <TextBlock Text="Downloading..."
-                                                               Visibility="{x:Bind BoolToVisibility(IsDownloading), Mode=OneWay}"/>
+                                                               Visibility="{x:Bind IsDownloading, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"/>
                                                 </StackPanel>
                                             </Button>
                                         </StackPanel>
@@ -195,7 +204,7 @@
                                     <!-- Status Badge -->
                                     <Border Grid.Row="3" Background="#E8F5E9" CornerRadius="4" 
                                             Padding="10,5" HorizontalAlignment="Left" Margin="0,0,0,10"
-                                            Visibility="{x:Bind BoolToVisibility(IsInstalled), Mode=OneWay}">
+                                            Visibility="{x:Bind IsInstalled, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                             <FontIcon Glyph="&#xE73E;" FontSize="14" Foreground="#4CAF50"/>
                                             <TextBlock Text="{x:Bind VersionStatusText, Mode=OneWay}" FontSize="12" 
@@ -205,7 +214,7 @@
 
                                     <!-- Download Progress -->
                                     <Grid Grid.Row="4" Margin="0,0,0,10"
-                                          Visibility="{x:Bind BoolToVisibility(IsDownloading), Mode=OneWay}">
+                                          Visibility="{x:Bind IsDownloading, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
@@ -217,8 +226,27 @@
                                                    FontSize="12" Foreground="#0078D4" FontWeight="Medium"/>
                                     </Grid>
 
+                                    <!-- Server Startup/Shutdown -->
+                                    <Border Grid.Row="5" Background="#FFF8E1" CornerRadius="4"
+                                            Padding="10,6" HorizontalAlignment="Left" Margin="0,0,0,10"
+                                            Visibility="{x:Bind IsServerStarting, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <ProgressRing IsActive="True" Width="16" Height="16" Foreground="#F9A825"/>
+                                            <TextBlock Text="Loading model..." FontSize="12" Foreground="#8D6E00" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Row="5" Background="#FDECEA" CornerRadius="4"
+                                            Padding="10,6" HorizontalAlignment="Left" Margin="0,0,0,10"
+                                            Visibility="{x:Bind IsServerStopping, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <ProgressRing IsActive="True" Width="16" Height="16" Foreground="#D73A49"/>
+                                            <TextBlock Text="Stopping server..." FontSize="12" Foreground="#B71C1C" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Border>
+
                                     <!-- Actions -->
-                                    <Grid Grid.Row="5">
+                                    <Grid Grid.Row="6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -235,7 +263,7 @@
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
                                             <!-- Run Button (when installed and not running) -->
                                             <Button Click="RunServerButton_Click"
-                                                    Visibility="{x:Bind RunButtonVisibility(IsInstalled, IsServerRunning), Mode=OneWay}"
+                                                    Visibility="{x:Bind RunButtonVisibility, Mode=OneWay}"
                                                     Background="#0078D4" Foreground="White" 
                                                     CornerRadius="4" Padding="15,8">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -246,7 +274,7 @@
 
                                             <!-- Stop Button (when running) -->
                                             <Button Command="{x:Bind StopServerCommand}"
-                                                    Visibility="{x:Bind StopButtonVisibility(IsServerRunning), Mode=OneWay}"
+                                                    Visibility="{x:Bind StopButtonVisibility, Mode=OneWay}"
                                                     Background="#D73A49" Foreground="White" 
                                                     CornerRadius="4" Padding="15,8">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -258,12 +286,12 @@
                                      </Grid>
 
                                      <!-- Installation Details Section -->
-                                     <Border Grid.Row="6" 
+                                     <Border Grid.Row="7" 
                                              Background="#F8F9FA" 
                                              CornerRadius="6" 
                                              Padding="12" 
                                              Margin="0,15,0,0"
-                                             Visibility="{x:Bind BoolToVisibility(IsInstalled), Mode=OneWay}"
+                                             Visibility="{x:Bind IsInstalled, Converter={StaticResource BoolToVisibilityConverter}, Mode=OneWay}"
                                              BorderBrush="#E0E0E0"
                                              BorderThickness="1">
                                          <StackPanel Spacing="8">
@@ -313,6 +341,43 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
+
+            <!-- Logs View -->
+            <Grid Padding="30,20" Visibility="{Binding IsLogsView, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <TextBlock Text="Engine" FontSize="12" Foreground="#666" VerticalAlignment="Center"/>
+                    <ComboBox ItemsSource="{Binding Engines}" 
+                              SelectedItem="{Binding SelectedLogEngine, Mode=TwoWay}" 
+                              DisplayMemberPath="Name" Width="260"/>
+                    <Button Content="Clear Logs" Height="32" Background="#F0F0F0" Click="ClearLogsButton_Click"/>
+                </StackPanel>
+
+                <Border Grid.Row="1" Background="White" CornerRadius="8" 
+                        BorderBrush="#E0E0E0" BorderThickness="1" Padding="10" Margin="0,15,0,0">
+                    <ListView x:Name="LogsListView" ItemsSource="{Binding SelectedLogEntries}"
+                              SelectionMode="None" IsItemClickEnabled="False">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding TimestampDisplay}" Foreground="#999" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Message}" 
+                                               FontSize="12" TextWrapping="Wrap"
+                                               Foreground="{Binding IsError, Converter={StaticResource LogErrorColorConverter}}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Border>
+            </Grid>
         </Grid>
 
         <!-- RIGHT PANEL - ACTIVE SERVER -->
@@ -352,35 +417,64 @@
                         <StackPanel Spacing="15">
                             <TextBlock Text="Performance" FontWeight="SemiBold" FontSize="14"/>
 
-                            <!-- CPU -->
-                            <StackPanel Spacing="5">
+                            <!-- CPU Sparkline -->
+                            <StackPanel Spacing="6">
                                 <Grid>
                                     <TextBlock Text="CPU Usage" FontSize="12" Foreground="#666"/>
-                                    <TextBlock Text="{x:Bind ActiveEngine.StatusMessage, Mode=OneWay, FallbackValue='--'}" 
+                                    <TextBlock Text="{x:Bind ActiveEngine.CurrentCpuPercent, Mode=OneWay, Converter={StaticResource PercentageToStringConverter}, FallbackValue='--'}"
                                                FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
                                 </Grid>
-                                <ProgressBar Value="0" Maximum="100" Height="6" CornerRadius="3"/>
+                                <Border Height="40" Background="#F4F6F8" CornerRadius="4" Padding="2">
+                                    <ItemsControl ItemsSource="{x:Bind ActiveEngine.CpuHistory, Mode=OneWay}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Spacing="2"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="3" Height="{Binding Value}" Background="#0078D4" CornerRadius="1" VerticalAlignment="Bottom"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
                             </StackPanel>
 
-                            <!-- Memory -->
-                            <StackPanel Spacing="5">
+                            <!-- Memory Sparkline -->
+                            <StackPanel Spacing="6">
                                 <Grid>
                                     <TextBlock Text="Memory" FontSize="12" Foreground="#666"/>
-                                    <TextBlock Text="-- MB" FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
+                                    <TextBlock Text="{x:Bind ActiveEngine.CurrentMemoryBytes, Mode=OneWay, Converter={StaticResource BytesToMemoryStringConverter}, FallbackValue='--'}"
+                                               FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
                                 </Grid>
-                                <ProgressBar Value="35" Maximum="100" Height="6" CornerRadius="3"/>
+                                <Border Height="40" Background="#F4F6F8" CornerRadius="4" Padding="2">
+                                    <ItemsControl ItemsSource="{x:Bind ActiveEngine.MemoryHistory, Mode=OneWay}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Spacing="2"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="3" Height="{Binding Value}" Background="#2DA44E" CornerRadius="1" VerticalAlignment="Bottom"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
                             </StackPanel>
 
                             <!-- Uptime -->
                             <Grid>
                                 <TextBlock Text="Uptime" FontSize="12" Foreground="#666"/>
-                                <TextBlock Text="--:--:--" FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
+                                <TextBlock Text="{x:Bind ActiveEngine.CurrentUptime, Mode=OneWay, Converter={StaticResource TimeSpanToStringConverter}, FallbackValue='--:--:--'}" 
+                                           FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
                             </Grid>
 
                             <!-- Port -->
                             <Grid>
                                 <TextBlock Text="Port" FontSize="12" Foreground="#666"/>
-                                <TextBlock Text="8080" FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
+                                <TextBlock Text="{x:Bind ActiveEngine.CurrentPort, Mode=OneWay, FallbackValue='8080'}" 
+                                           FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
                             </Grid>
                         </StackPanel>
                     </Border>

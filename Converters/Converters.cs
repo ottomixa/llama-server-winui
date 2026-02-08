@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
 using System;
+using llama_server_winui.Services;
 
 namespace llama_server_winui.Converters
 {
@@ -168,15 +169,15 @@ namespace llama_server_winui.Converters
     {
         public object Convert(object value, Type targetType, object parameter, string language)
         {
-            if (value is Services.ProcessState state)
+            if (value is ProcessState state)
             {
                 return state switch
                 {
-                    Services.ProcessState.Stopped => "Stopped",
-                    Services.ProcessState.Starting => "Starting...",
-                    Services.ProcessState.Running => "Running",
-                    Services.ProcessState.Stopping => "Stopping...",
-                    Services.ProcessState.Error => "Error",
+                    ProcessState.Stopped => "Stopped",
+                    ProcessState.Starting => "Starting...",
+                    ProcessState.Running => "Running",
+                    ProcessState.Stopping => "Stopping...",
+                    ProcessState.Error => "Error",
                     _ => "Unknown"
                 };
             }
@@ -197,17 +198,17 @@ namespace llama_server_winui.Converters
     {
         public object Convert(object value, Type targetType, object parameter, string language)
         {
-            if (value is Services.ProcessState state)
+            if (value is ProcessState state)
             {
                 return state switch
                 {
-                    Services.ProcessState.Running => new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    ProcessState.Running => new Microsoft.UI.Xaml.Media.SolidColorBrush(
                         Windows.UI.Color.FromArgb(255, 76, 175, 80)), // Green
-                    Services.ProcessState.Starting => new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    ProcessState.Starting => new Microsoft.UI.Xaml.Media.SolidColorBrush(
                         Windows.UI.Color.FromArgb(255, 255, 152, 0)), // Orange
-                    Services.ProcessState.Stopping => new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    ProcessState.Stopping => new Microsoft.UI.Xaml.Media.SolidColorBrush(
                         Windows.UI.Color.FromArgb(255, 255, 152, 0)), // Orange
-                    Services.ProcessState.Error => new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    ProcessState.Error => new Microsoft.UI.Xaml.Media.SolidColorBrush(
                         Windows.UI.Color.FromArgb(255, 244, 67, 54)), // Red
                     _ => new Microsoft.UI.Xaml.Media.SolidColorBrush(
                         Windows.UI.Color.FromArgb(255, 158, 158, 158)) // Gray
@@ -215,6 +216,29 @@ namespace llama_server_winui.Converters
             }
             return new Microsoft.UI.Xaml.Media.SolidColorBrush(
                 Windows.UI.Color.FromArgb(255, 158, 158, 158));
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, string language)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converts a bool flag to a log foreground color (error vs normal)
+    /// </summary>
+    public class LogErrorColorConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, string language)
+        {
+            if (value is bool isError && isError)
+            {
+                return new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                    Windows.UI.Color.FromArgb(255, 183, 28, 28)); // Red
+            }
+
+            return new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Windows.UI.Color.FromArgb(255, 51, 51, 51)); // Dark gray
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, string language)

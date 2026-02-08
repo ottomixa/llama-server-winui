@@ -37,6 +37,21 @@ namespace llama_server_winui
         public App()
         {
             this.InitializeComponent();
+
+            // Log and handle any unhandled exceptions to capture XAML parse details during startup
+            UnhandledException += (sender, e) =>
+            {
+                try
+                {
+                    var log = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "llama_unhandled.log");
+                    System.IO.File.AppendAllText(log, $"[UnhandledException] {DateTime.Now}\r\n");
+                    System.IO.File.AppendAllText(log, e.Exception.ToString() + "\r\n");
+                }
+                catch { }
+
+                // Prevent the runtime from terminating the process so we can inspect the state.
+                e.Handled = true;
+            };
         }
 
         protected override void OnLaunched(LaunchActivatedEventArgs args)

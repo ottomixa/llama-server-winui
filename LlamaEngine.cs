@@ -3,9 +3,11 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
@@ -15,6 +17,10 @@ namespace llama_server_winui
 {
     public partial class LlamaEngine : ObservableObject
     {
+        private const int DefaultPort = 8080;
+        private const int MaxLogEntries = 2000;
+        private const int ReadyCheckTimeoutSeconds = 90;
+
         public LlamaEngine()
         {
             CurrentVersion = string.Empty;
@@ -24,6 +30,7 @@ namespace llama_server_winui
             ExtractedFolderPath = string.Empty;
             LlamaServerExePath = string.Empty;
             LlamaServerVersion = "Unknown";
+            InitializePerformanceHistory();
         }
 
         public string Name { get; set; } = string.Empty;
@@ -37,6 +44,13 @@ namespace llama_server_winui
 
         [ObservableProperty]
         public partial string LatestVersion { get; set; }
+
+        public ObservableCollection<PerformanceSample> CpuHistory { get; } = new();
+        public ObservableCollection<PerformanceSample> MemoryHistory { get; } = new();
+
+        private const int PerformanceSampleCount = 48;
+        private const double PerformanceChartHeight = 40.0;
+        private long _memoryPeakBytes = 1;
 
         public string InstalledVersionDisplay
         {
@@ -65,8 +79,23 @@ namespace llama_server_winui
         [ObservableProperty]
         public partial bool IsUpdateAvailable { get; set; }
 
+        public Visibility DownloadButtonVisibility => !IsInstalled || IsUpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
+
+        partial void OnIsUpdateAvailableChanged(bool value)
+        {
+            OnPropertyChanged(nameof(DownloadButtonVisibility));
+            OnPropertyChanged(nameof(VersionStatusText));
+        }
+
         [ObservableProperty]
         public partial bool IsDownloading { get; set; }
+
+        public Visibility IsNotDownloadingVisibility => !IsDownloading ? Visibility.Visible : Visibility.Collapsed;
+
+        partial void OnIsDownloadingChanged(bool value)
+        {
+            OnPropertyChanged(nameof(IsNotDownloadingVisibility));
+        }
 
         [ObservableProperty]
         public partial double DownloadProgress { get; set; }
@@ -92,9 +121,44 @@ namespace llama_server_winui
         public partial bool IsServerRunning { get; set; }
 
         [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
+        public partial bool IsServerStarting { get; set; }
+
+        [ObservableProperty]
+        [NotifyCanExecuteChangedFor(nameof(RunServerCommand))]
+        public partial bool IsServerStopping { get; set; }
+
+        public Visibility RunButtonVisibility => IsInstalled && !IsServerRunning && !IsServerStarting && !IsServerStopping ? Visibility.Visible : Visibility.Collapsed;
+        public Visibility StopButtonVisibility => IsServerRunning ? Visibility.Visible : Visibility.Collapsed;
+
+        partial void OnIsServerRunningChanged(bool value)
+        {
+            OnPropertyChanged(nameof(RunButtonVisibility));
+            OnPropertyChanged(nameof(StopButtonVisibility));
+        }
+
+        partial void OnIsServerStartingChanged(bool value)
+        {
+            OnPropertyChanged(nameof(RunButtonVisibility));
+        }
+
+        partial void OnIsServerStoppingChanged(bool value)
+        {
+            OnPropertyChanged(nameof(RunButtonVisibility));
+        }
+
+        [ObservableProperty]
         public partial ProcessMetrics? CurrentMetrics { get; set; }
 
+        public double CurrentCpuPercent => CurrentMetrics?.CpuPercent ?? 0;
+        public long CurrentMemoryBytes => CurrentMetrics?.MemoryBytes ?? 0;
+        public TimeSpan CurrentUptime => CurrentMetrics?.Uptime ?? TimeSpan.Zero;
+        public int CurrentPort => CurrentMetrics?.Port ?? DefaultPort;
+
+        public ObservableCollection<EngineLogEntry> LogEntries { get; } = new();
+
         private ProcessLifecycleManager? _processManager;
+        private CancellationTokenSource? _startupCts;
         
         // Polling state for download progress
         private DispatcherQueueTimer? _progressTimer;
@@ -355,9 +419,9 @@ namespace llama_server_winui
         [RelayCommand(CanExecute = nameof(CanRunServer))]
         private async Task RunServer()
         {
-            if (IsServerRunning)
+            if (IsServerRunning || IsServerStarting || IsServerStopping)
             {
-                StatusMessage = "Server already running";
+                StatusMessage = IsServerStopping ? "Server is stopping" : "Server already running";
                 return;
             }
 
@@ -387,6 +451,13 @@ namespace llama_server_winui
             try
             {
                 Log($"Starting server with ProcessLifecycleManager: {exePath}");
+                AppendLogLine("Starting server...", false);
+
+                IsServerStarting = true;
+                IsServerStopping = false;
+                StatusMessage = "Starting server...";
+                _startupCts?.Cancel();
+                _startupCts = new CancellationTokenSource();
                 
                 // Dispose old manager if exists
                 _processManager?.Dispose();
@@ -399,7 +470,7 @@ namespace llama_server_winui
                 _processManager.StateChanged += OnProcessStateChanged;
                 _processManager.OutputReceived += OnOutputReceived;
                 
-                var args = "--port 8080";
+                var args = $"--port {DefaultPort}";
                 if (!string.IsNullOrWhiteSpace(ModelPath))
                 {
                     var safeModelPath = ModelPath.Replace("\"", "\\\"");
@@ -413,25 +484,35 @@ namespace llama_server_winui
                     WorkingDirectory = Path.GetDirectoryName(exePath)
                 };
                 
-                // Start with health check
-                StatusMessage = "Starting server...";
-                var success = await _processManager.StartAsync(
-                    psi, 
-                    "http://localhost:8080/health", 
-                    healthCheckTimeoutSeconds: 30
-                );
+                // Start process
+                var success = await _processManager.StartAsync(psi);
                 
                 if (success)
                 {
                     IsServerRunning = true;
-                    StatusMessage = "Server running on port 8080";
-                    Log("Server started successfully with health check passed");
+                    StatusMessage = "Loading model...";
+                    Log("Server started successfully");
+                    AppendLogLine("Server process started, waiting for model...", false);
+
+                    var ready = await WaitForServerReadyAsync(DefaultPort, _startupCts.Token);
+                    if (ready)
+                    {
+                        StatusMessage = $"Server running on port {DefaultPort}";
+                        AppendLogLine("Server ready.", false);
+                    }
+                    else if (!_startupCts.IsCancellationRequested)
+                    {
+                        StatusMessage = "Server started, waiting for model...";
+                        AppendLogLine("Server started, still waiting for model.", false);
+                    }
                 }
                 else
                 {
                     IsServerRunning = false;
+                    IsServerStarting = false;
                     StatusMessage = "Failed to start server";
-                    Log("Server failed to start or health check failed");
+                    AppendLogLine("Failed to start server.", true);
+                    Log("Server failed to start");
                 }
             }
             catch (Exception ex)
@@ -439,6 +520,15 @@ namespace llama_server_winui
                 Log($"Error starting server: {ex}");
                 StatusMessage = "Error: " + ex.Message;
                 IsServerRunning = false;
+                IsServerStarting = false;
+                AppendLogLine($"Error starting server: {ex.Message}", true);
+            }
+            finally
+            {
+                if (!IsServerStopping)
+                {
+                    IsServerStarting = false;
+                }
             }
         }
 
@@ -447,6 +537,7 @@ namespace llama_server_winui
             App.MainDispatcher?.TryEnqueue(() =>
             {
                 CurrentMetrics = metrics;
+                AddPerformanceSample(metrics);
                 // Update status with CPU info
                 if (metrics.State == ProcessState.Running)
                 {
@@ -466,10 +557,15 @@ namespace llama_server_winui
                     IsServerRunning = false;
                     CurrentMetrics = null;
                     StatusMessage = state == ProcessState.Error ? "Server error" : "Server stopped";
+                    IsServerStarting = false;
+                    IsServerStopping = false;
+                    ResetPerformanceHistory();
                 }
                 else if (state == ProcessState.Running)
                 {
                     IsServerRunning = true;
+                    IsServerStopping = false;
+                    ResetPerformanceHistory();
                 }
             });
         }
@@ -478,6 +574,124 @@ namespace llama_server_winui
         {
             // Log output for debugging
             Log($"[Server Output] {output}");
+            AppendLogLine(output, output.StartsWith("[ERROR]", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void AddPerformanceSample(ProcessMetrics metrics)
+        {
+            var cpuSample = ScaleCpu(metrics.CpuPercent);
+            var memorySample = ScaleMemory(metrics.MemoryBytes);
+
+            AddHistorySample(CpuHistory, cpuSample);
+            AddHistorySample(MemoryHistory, memorySample);
+        }
+
+        private void AddHistorySample(ObservableCollection<PerformanceSample> target, double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                value = 0;
+            }
+
+            if (target.Count >= PerformanceSampleCount)
+            {
+                target.RemoveAt(0);
+            }
+            target.Add(new PerformanceSample(value));
+        }
+
+        private double ScaleCpu(double cpuPercent)
+        {
+            var normalized = Math.Clamp(cpuPercent / 100.0, 0, 1);
+            return normalized * PerformanceChartHeight;
+        }
+
+        private double ScaleMemory(long memoryBytes)
+        {
+            if (memoryBytes <= 0)
+            {
+                return 0;
+            }
+
+            if (memoryBytes > _memoryPeakBytes)
+            {
+                _memoryPeakBytes = memoryBytes;
+            }
+
+            var normalized = Math.Clamp((double)memoryBytes / _memoryPeakBytes, 0, 1);
+            return normalized * PerformanceChartHeight;
+        }
+
+        private void InitializePerformanceHistory()
+        {
+            CpuHistory.Clear();
+            MemoryHistory.Clear();
+
+            for (int i = 0; i < PerformanceSampleCount; i++)
+            {
+                CpuHistory.Add(new PerformanceSample(0));
+                MemoryHistory.Add(new PerformanceSample(0));
+            }
+        }
+
+        private void ResetPerformanceHistory()
+        {
+            _memoryPeakBytes = 1;
+            InitializePerformanceHistory();
+        }
+
+        private void AppendLogLine(string message, bool isError)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            App.MainDispatcher?.TryEnqueue(() =>
+            {
+                if (LogEntries.Count >= MaxLogEntries)
+                {
+                    LogEntries.RemoveAt(0);
+                }
+                LogEntries.Add(new EngineLogEntry(DateTime.Now, message, isError));
+            });
+        }
+
+        private async Task<bool> WaitForServerReadyAsync(int port, CancellationToken token)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(ReadyCheckTimeoutSeconds);
+
+            while (DateTime.UtcNow < deadline && !token.IsCancellationRequested)
+            {
+                try
+                {
+                    using var client = new TcpClient();
+                    await client.ConnectAsync("127.0.0.1", port, token);
+                    if (client.Connected)
+                    {
+                        return true;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    return false;
+                }
+                catch
+                {
+                    // Ignore until timeout
+                }
+
+                try
+                {
+                    await Task.Delay(500, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return false;
+                }
+            }
+
+            return false;
         }
 
         [RelayCommand]
@@ -485,44 +699,59 @@ namespace llama_server_winui
         {
             if (_processManager != null)
             {
-                try
+                Log("Stopping server...");
+                AppendLogLine("Stopping server...", false);
+                StatusMessage = "Stopping...";
+                IsServerStopping = true;
+                IsServerStarting = false;
+                _startupCts?.Cancel();
+
+                var manager = _processManager;
+                _processManager = null;
+
+                _ = Task.Run(() =>
                 {
-                    Log("Stopping server...");
-                    StatusMessage = "Stopping...";
-                    _processManager.Stop();
-                    _processManager.Dispose();
-                    _processManager = null;
-                    IsServerRunning = false;
-                    CurrentMetrics = null;
-                    StatusMessage = "Server stopped";
-                    Log("Server stopped successfully");
-                }
-                catch (Exception ex)
-                {
-                    Log($"Error stopping server: {ex}");
-                    StatusMessage = "Error stopping: " + ex.Message;
-                }
+                    try
+                    {
+                        manager.Stop();
+                        manager.Dispose();
+                        Log("Server stopped successfully");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Error stopping server: {ex}");
+                        AppendLogLine($"Error stopping server: {ex.Message}", true);
+                    }
+                    finally
+                    {
+                        App.MainDispatcher?.TryEnqueue(() =>
+                        {
+                            IsServerRunning = false;
+                            CurrentMetrics = null;
+                            StatusMessage = "Server stopped";
+                            IsServerStopping = false;
+                        });
+                    }
+                });
             }
         }
 
-        // Helper methods for XAML visibility binding
-        public Visibility BoolToVisibility(bool value) => 
-            value ? Visibility.Visible : Visibility.Collapsed;
-
-        public Visibility InverseVisibility(bool value) => 
-            value ? Visibility.Collapsed : Visibility.Visible;
-
-        public Visibility RunButtonVisibility(bool isInstalled, bool isServerRunning) => 
-            isInstalled && !isServerRunning ? Visibility.Visible : Visibility.Collapsed;
-
-
-        public Visibility DownloadButtonVisibility(bool isInstalled, bool isUpdateAvailable) =>
-            !isInstalled || isUpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
-
-        public string DownloadButtonText =>
-            !IsInstalled ? "Install" : (IsUpdateAvailable ? "Update" : "Install");
         
         public string VersionStatusText => IsUpdateAvailable ? "New Version available" : "Latest Version Installed";
+
+        public string DownloadButtonText
+        {
+            get
+            {
+                // Return the appropriate text based on your logic
+                // For example:
+                if (IsDownloading)
+                    return "Downloading...";
+                if (!IsInstalled)
+                    return "Download";
+                return "Reinstall";
+            }
+        }
 
         partial void OnCurrentVersionChanged(string value)
         {
@@ -541,6 +770,16 @@ namespace llama_server_winui
             CheckUpdateAvailable();
             OnPropertyChanged(nameof(InstalledVersionDisplay));
             OnPropertyChanged(nameof(DownloadButtonText));
+            OnPropertyChanged(nameof(RunButtonVisibility));
+            OnPropertyChanged(nameof(DownloadButtonVisibility));
+        }
+
+        partial void OnCurrentMetricsChanged(ProcessMetrics? value)
+        {
+            OnPropertyChanged(nameof(CurrentCpuPercent));
+            OnPropertyChanged(nameof(CurrentMemoryBytes));
+            OnPropertyChanged(nameof(CurrentUptime));
+            OnPropertyChanged(nameof(CurrentPort));
         }
 
         private void CheckUpdateAvailable()
@@ -567,10 +806,12 @@ namespace llama_server_winui
             return 0;
         }
 
-        public Visibility StopButtonVisibility(bool isServerRunning) => 
-            isServerRunning ? Visibility.Visible : Visibility.Collapsed;
-
-        private bool CanRunServer() => IsInstalled && !IsServerRunning && !string.IsNullOrEmpty(ModelPath);
+        private bool CanRunServer() =>
+            IsInstalled &&
+            !IsServerRunning &&
+            !IsServerStarting &&
+            !IsServerStopping &&
+            !string.IsNullOrEmpty(ModelPath);
 
         public async Task RefreshInstallationDetailsAsync()
         {            
@@ -687,5 +928,31 @@ namespace llama_server_winui
             }
             catch { }
         }
+    }
+
+    public sealed class EngineLogEntry
+    {
+        public EngineLogEntry(DateTime timestamp, string message, bool isError)
+        {
+            Timestamp = timestamp;
+            Message = message;
+            IsError = isError;
+        }
+
+        public DateTime Timestamp { get; }
+        public string Message { get; }
+        public bool IsError { get; }
+
+        public string TimestampDisplay => Timestamp.ToString("HH:mm:ss");
+    }
+
+    public sealed class PerformanceSample
+    {
+        public PerformanceSample(double value)
+        {
+            Value = value;
+        }
+
+        public double Value { get; set; }
     }
 }

@@ -15,6 +15,12 @@
             <!-- Bool to Visibility Converters -->
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
             <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+
+            <!-- Performance Converters -->
+            <converters:PercentageToStringConverter x:Key="PercentageToStringConverter"/>
+            <converters:BytesToMemoryStringConverter x:Key="BytesToMemoryStringConverter"/>
+            <converters:TimeSpanToStringConverter x:Key="TimeSpanToStringConverter"/>
+            <converters:LogErrorColorConverter x:Key="LogErrorColorConverter"/>
             
         </ResourceDictionary>
     </Application.Resources>
