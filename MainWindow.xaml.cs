@@ -89,12 +89,26 @@ namespace llama_server_winui
                     SubscribeLogEvents(_selectedLogEngine);
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(SelectedLogEntries));
+                    OnPropertyChanged(nameof(CombinedLogText));
                 }
             }
         }
 
         public ObservableCollection<EngineLogEntry> SelectedLogEntries =>
             SelectedLogEngine?.LogEntries ?? _emptyLogEntries;
+
+        public string CombinedLogText
+        {
+            get
+            {
+                var entries = SelectedLogEntries;
+                if (entries == null || entries.Count == 0)
+                    return "";
+                
+                var lines = entries.Select(e => e.FullLogLine);
+                return string.Join(Environment.NewLine, lines);
+            }
+        }
 
         public bool IsLogsView
         {
@@ -290,16 +304,27 @@ namespace llama_server_winui
 
         private void LogEntries_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            if (LogsListView == null || LogsListView.Items.Count == 0)
+            if (SelectedLogEntries == null || SelectedLogEntries.Count == 0)
             {
                 return;
             }
 
-            var lastIndex = LogsListView.Items.Count - 1;
-            if (lastIndex >= 0)
+            // Notify that the combined log text has changed
+            OnPropertyChanged(nameof(CombinedLogText));
+
+            // Dispatch to UI thread to allow TextBox to render the updated text
+            DispatcherQueue.TryEnqueue(() =>
             {
-                LogsListView.ScrollIntoView(LogsListView.Items[lastIndex]);
-            }
+                try
+                {
+                    if (LogsTextBox != null && LogsTextBox.Text.Length > 0)
+                    {
+                        // Move cursor to end of text
+                        LogsTextBox.Select(LogsTextBox.Text.Length, 0);
+                    }
+                }
+                catch { }
+            });
         }
 
         /// <summary>

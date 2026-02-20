@@ -244,6 +244,45 @@ namespace llama_server_winui.Services
             }
         }
 
+        /// <summary>
+        /// Forcefully kills the process without waiting for graceful shutdown
+        /// </summary>
+        public void ForceKill()
+        {
+            if (_process == null || _process.HasExited)
+            {
+                CurrentState = ProcessState.Stopped;
+                return;
+            }
+
+            try
+            {
+                CurrentState = ProcessState.Stopping;
+                _startCts?.Cancel();
+                _monitorTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+
+                try
+                {
+                    _process.Kill(entireProcessTree: true);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error force killing process: {ex.Message}");
+                }
+
+                CurrentState = ProcessState.Stopped;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in ForceKill: {ex.Message}");
+                CurrentState = ProcessState.Error;
+            }
+            finally
+            {
+                CleanupProcess();
+            }
+        }
+
         private void InitializePerformanceCounters()
         {
             try

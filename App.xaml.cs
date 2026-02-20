@@ -38,6 +38,14 @@ namespace llama_server_winui
         {
             this.InitializeComponent();
 
+            // Set up exit handlers to ensure cleanup on terminal close (e.g. dotnet run)
+            AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+            try
+            {
+                Console.CancelKeyPress += OnCancelKeyPress;
+            }
+            catch { }
+
             // Log and handle any unhandled exceptions to capture XAML parse details during startup
             UnhandledException += (sender, e) =>
             {
@@ -53,6 +61,38 @@ namespace llama_server_winui
                 e.Handled = true;
             };
         }
+
+        private void OnProcessExit(object? sender, EventArgs e)
+        {
+            ForceCleanExit();
+        }
+
+        private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
+        {
+            e.Cancel = true;
+            ForceCleanExit();
+            Environment.Exit(0);
+        }
+
+        private void ForceCleanExit()
+        {
+            _isExiting = true;
+            try
+            {
+                var runningEngines = Engines?.Where(e => e.IsServerRunning).ToList() ?? new System.Collections.Generic.List<LlamaEngine>();
+                foreach (var engine in runningEngines)
+                {
+                    try
+                    {
+                        // Stop server directly without async delay if we are exiting out of band
+                        engine.ForceKillServer();
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
 
         protected override void OnLaunched(LaunchActivatedEventArgs args)
         {

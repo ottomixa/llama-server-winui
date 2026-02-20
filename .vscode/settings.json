@@ -1,0 +1,15 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "dotnet clean": true,
+        "dotnet build": true,
+        "dotnet run": true,
+        "Test-Path": true,
+        "Get-Item": true,
+        "Get-FileHash": true,
+        "ForEach-Object": true,
+        "&": true,
+        "Get-WinEvent": true,
+        "Get-CimInstance": true,
+        "dotnet restore": true
+    }
+}

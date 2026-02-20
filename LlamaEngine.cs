@@ -736,6 +736,32 @@ namespace llama_server_winui
             }
         }
 
+        public void ForceKillServer()
+        {
+            if (_processManager != null)
+            {
+                Log("Force killing server...");
+                StatusMessage = "Force stopped";
+                IsServerStopping = true;
+                IsServerStarting = false;
+                _startupCts?.Cancel();
+
+                var manager = _processManager;
+                _processManager = null;
+                
+                try
+                {
+                    manager.ForceKill();
+                    manager.Dispose();
+                }
+                catch { }
+
+                IsServerRunning = false;
+                CurrentMetrics = null;
+                IsServerStopping = false;
+            }
+        }
+
         
         public string VersionStatusText => IsUpdateAvailable ? "New Version available" : "Latest Version Installed";
 
@@ -944,6 +970,7 @@ namespace llama_server_winui
         public bool IsError { get; }
 
         public string TimestampDisplay => Timestamp.ToString("HH:mm:ss");
+        public string FullLogLine => $"[{Timestamp:HH:mm:ss}] {Message}";
     }
 
     public sealed class PerformanceSample

@@ -358,24 +358,15 @@
                 </StackPanel>
 
                 <Border Grid.Row="1" Background="White" CornerRadius="8" 
-                        BorderBrush="#E0E0E0" BorderThickness="1" Padding="10" Margin="0,15,0,0">
-                    <ListView x:Name="LogsListView" ItemsSource="{Binding SelectedLogEntries}"
-                              SelectionMode="None" IsItemClickEnabled="False">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid ColumnSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="80"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding TimestampDisplay}" Foreground="#999" FontSize="11"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Message}" 
-                                               FontSize="12" TextWrapping="Wrap"
-                                               Foreground="{Binding IsError, Converter={StaticResource LogErrorColorConverter}}"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
+                        BorderBrush="#E0E0E0" BorderThickness="1" Padding="8" Margin="0,15,0,0">
+                    <TextBox x:Name="LogsTextBox"
+                             IsReadOnly="True"
+                             Text="{x:Bind CombinedLogText, Mode=OneWay}"
+                             FontSize="11"
+                             FontFamily="Consolas"
+                             Foreground="#333"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"/>
                 </Border>
             </Grid>
         </Grid>
