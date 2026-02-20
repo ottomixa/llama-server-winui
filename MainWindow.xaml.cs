@@ -328,34 +328,15 @@ namespace llama_server_winui
         }
 
         /// <summary>
-        /// Handles window closing - hide instead of close unless app is exiting
+        /// Handles window closing - exits the application to ensure .NET host finishes execution 
+        /// cleanly, preventing dangling terminal sessions.
         /// </summary>
         private void OnWindowClosing(Microsoft.UI.Windowing.AppWindow sender, 
                                       Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
         {
-            // Only hide if not exiting the entire application
-            if (!((App)Application.Current).IsExiting)
+            if (Application.Current is App app && !app.IsExiting)
             {
-                args.Cancel = true;
-                this.AppWindow.Hide();
-            }
-            else
-            {
-                // App is exiting - stop all running servers
-                foreach (var engine in Engines)
-                {
-                    if (engine.IsServerRunning)
-                    {
-                        try
-                        {
-                            engine.StopServer();
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Error stopping engine during shutdown: {ex.Message}");
-                        }
-                    }
-                }
+                app.ExitApplication();
             }
         }
 

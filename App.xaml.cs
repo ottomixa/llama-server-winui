@@ -328,7 +328,7 @@ namespace llama_server_winui
             }
         }
 
-        private void ExitApplication()
+        public void ExitApplication()
         {
             _isExiting = true;
 

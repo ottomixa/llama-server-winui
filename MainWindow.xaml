@@ -120,7 +120,7 @@
 
             </Grid>
 
-            <ScrollViewer Padding="30,20" Visibility="{Binding IsEnginesView, Converter={StaticResource BoolToVisibilityConverter}}">
+            <ScrollViewer Grid.Row="1" Padding="30,20" Visibility="{Binding IsEnginesView, Converter={StaticResource BoolToVisibilityConverter}}">
                 <ItemsControl ItemsSource="{x:Bind Engines}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="local:LlamaEngine">
@@ -343,7 +343,7 @@
             </ScrollViewer>
 
             <!-- Logs View -->
-            <Grid Padding="30,20" Visibility="{Binding IsLogsView, Converter={StaticResource BoolToVisibilityConverter}}">
+            <Grid Grid.Row="1" Padding="30,20" Visibility="{Binding IsLogsView, Converter={StaticResource BoolToVisibilityConverter}}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
@@ -366,7 +366,9 @@
                              FontFamily="Consolas"
                              Foreground="#333"
                              AcceptsReturn="True"
-                             TextWrapping="Wrap"/>
+                             TextWrapping="Wrap"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.VerticalScrollMode="Enabled"/>
                 </Border>
             </Grid>
         </Grid>
