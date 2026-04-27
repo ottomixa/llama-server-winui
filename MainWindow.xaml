@@ -358,17 +358,28 @@
                 </StackPanel>
 
                 <Border Grid.Row="1" Background="White" CornerRadius="8" 
-                        BorderBrush="#E0E0E0" BorderThickness="1" Padding="8" Margin="0,15,0,0">
-                    <TextBox x:Name="LogsTextBox"
-                             IsReadOnly="True"
-                             Text="{x:Bind CombinedLogText, Mode=OneWay}"
-                             FontSize="11"
-                             FontFamily="Consolas"
-                             Foreground="#333"
-                             AcceptsReturn="True"
-                             TextWrapping="Wrap"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.VerticalScrollMode="Enabled"/>
+                        BorderBrush="#E0E0E0" BorderThickness="1" Padding="0" Margin="0,15,0,0">
+                    <ListView x:Name="LogsListView"
+                              ItemsSource="{x:Bind SelectedLogEntries, Mode=OneWay}"
+                              SelectionMode="None"
+                              ShowsScrollingPlaceholders="False">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:EngineLogEntry">
+                                <TextBlock Text="{x:Bind FullLogLine}"
+                                           FontSize="11"
+                                           FontFamily="Consolas"
+                                           Foreground="#333"
+                                           TextWrapping="Wrap"/>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="MinHeight" Value="20"/>
+                                <Setter Property="Padding" Value="10,2"/>
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
                 </Border>
             </Grid>
         </Grid>

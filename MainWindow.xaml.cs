@@ -302,6 +302,8 @@ namespace llama_server_winui
             engine.LogEntries.CollectionChanged -= LogEntries_CollectionChanged;
         }
 
+        private bool _isAutoScrollScheduled = false;
+
         private void LogEntries_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
             if (SelectedLogEntries == null || SelectedLogEntries.Count == 0)
@@ -309,22 +311,22 @@ namespace llama_server_winui
                 return;
             }
 
-            // Notify that the combined log text has changed
-            OnPropertyChanged(nameof(CombinedLogText));
-
-            // Dispatch to UI thread to allow TextBox to render the updated text
-            DispatcherQueue.TryEnqueue(() =>
+            if (!_isAutoScrollScheduled)
             {
-                try
+                _isAutoScrollScheduled = true;
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
                 {
-                    if (LogsTextBox != null && LogsTextBox.Text.Length > 0)
+                    _isAutoScrollScheduled = false;
+                    try
                     {
-                        // Move cursor to end of text
-                        LogsTextBox.Select(LogsTextBox.Text.Length, 0);
+                        if (LogsListView != null && SelectedLogEntries.Count > 0)
+                        {
+                            LogsListView.ScrollIntoView(SelectedLogEntries[^1]);
+                        }
                     }
-                }
-                catch { }
-            });
+                    catch { }
+                });
+            }
         }
 
         /// <summary>

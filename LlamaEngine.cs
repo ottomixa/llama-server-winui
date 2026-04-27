@@ -640,6 +640,10 @@ namespace llama_server_winui
             InitializePerformanceHistory();
         }
 
+        private readonly object _logQueueLock = new();
+        private readonly System.Collections.Generic.List<EngineLogEntry> _logQueue = new();
+        private bool _isLogFlushScheduled = false;
+
         private void AppendLogLine(string message, bool isError)
         {
             if (string.IsNullOrWhiteSpace(message))
@@ -647,14 +651,39 @@ namespace llama_server_winui
                 return;
             }
 
-            App.MainDispatcher?.TryEnqueue(() =>
+            lock (_logQueueLock)
             {
-                if (LogEntries.Count >= MaxLogEntries)
+                _logQueue.Add(new EngineLogEntry(DateTime.Now, message, isError));
+                if (!_isLogFlushScheduled)
                 {
-                    LogEntries.RemoveAt(0);
+                    _isLogFlushScheduled = true;
+                    // Batch UI updates every 50ms to prevent flooding the D3D render thread
+                    Task.Delay(50).ContinueWith(_ =>
+                    {
+                        App.MainDispatcher?.TryEnqueue(() =>
+                        {
+                            FlushLogQueue();
+                        });
+                    });
                 }
-                LogEntries.Add(new EngineLogEntry(DateTime.Now, message, isError));
-            });
+            }
+        }
+
+        private void FlushLogQueue()
+        {
+            lock (_logQueueLock)
+            {
+                foreach (var entry in _logQueue)
+                {
+                    if (LogEntries.Count >= MaxLogEntries)
+                    {
+                        LogEntries.RemoveAt(0);
+                    }
+                    LogEntries.Add(entry);
+                }
+                _logQueue.Clear();
+                _isLogFlushScheduled = false;
+            }
         }
 
         private async Task<bool> WaitForServerReadyAsync(int port, CancellationToken token)

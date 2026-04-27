@@ -406,12 +406,24 @@ namespace llama_server_winui.Services
 
         private void OnOutputDataReceived(object sender, DataReceivedEventArgs e)
         {
-            if (string.IsNullOrEmpty(e.Data))
+            ProcessOutputData(e.Data);
+        }
+
+        private void OnErrorDataReceived(object sender, DataReceivedEventArgs e)
+        {
+            // llama.cpp outputs standard info logs to stderr. 
+            // We treat it identically to stdout to avoid every log line saying [ERROR].
+            ProcessOutputData(e.Data);
+        }
+
+        private void ProcessOutputData(string? data)
+        {
+            if (string.IsNullOrEmpty(data))
                 return;
 
             lock (_outputLock)
             {
-                _outputBuffer.AppendLine(e.Data);
+                _outputBuffer.AppendLine(data);
                 
                 // Keep buffer size manageable (last 1000 lines)
                 var lines = _outputBuffer.ToString().Split('\n');
@@ -422,20 +434,7 @@ namespace llama_server_winui.Services
                 }
             }
 
-            OutputReceived?.Invoke(this, e.Data);
-        }
-
-        private void OnErrorDataReceived(object sender, DataReceivedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(e.Data))
-                return;
-
-            lock (_outputLock)
-            {
-                _outputBuffer.AppendLine($"[ERROR] {e.Data}");
-            }
-
-            OutputReceived?.Invoke(this, $"[ERROR] {e.Data}");
+            OutputReceived?.Invoke(this, data);
         }
 
         private void OnProcessExited(object? sender, EventArgs e)
